@@ -1,6 +1,6 @@
 # Quick test simulation configuration
 seed: 12345
-generations: 20
+cycles: 2000  # Number of cycles to run (one cycle = one menstrual cycle)
 initial_population_size: 100
 
 initial_sex_ratio:
@@ -8,23 +8,35 @@ initial_sex_ratio:
   female: 0.5
 
 creature_archetype:
-  max_breeding_age:
-    male: 10
-    female: 8
-  max_litters: 5
+  # Cycle-based configuration
+  # Lifespan range in years (converted to cycles automatically)
   lifespan:
-    min: 12
-    max: 18
+    min: 13
+    max: 20
+  sexual_maturity_months: 6
+  max_fertility_age_years:
+    male: 18
+    female: 17
+  gestation_period_days: 65
+  nursing_period_days: 28
+  menstrual_cycle_days: 24
+  nearing_end_cycles: 4
   remove_ineligible_immediately: false
-  offspring_removal_rate: 0.0  # Probability offspring are removed (sold/given away)
 
 target_phenotypes: []
 
+# Breeder configuration
+# Breeders own creatures and select mating pairs
+# Ownership rules:
+# - Founders assigned evenly to breeders
+# - Offspring inherit from female parent's breeder
+# - Random ownership transfers occur (2-3 owners per creature on average)
+# - Breeders give away all offspring unless parent nearing end (then keep one replacement)
 breeders:
-  random: 20
+  random: 0
   inbreeding_avoidance: 0
-  kennel_club: 0
-  unrestricted_phenotype: 0
+  kennel_club: 20
+  unrestricted_phenotype: 20
 
 traits:
   - trait_id: 0

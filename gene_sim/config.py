@@ -12,13 +12,23 @@ from .exceptions import ConfigurationError
 @dataclass
 class CreatureArchetypeConfig:
     """Configuration for creature archetype parameters."""
-    max_breeding_age_male: int
-    max_breeding_age_female: int
-    max_litters: int
-    lifespan_min: int
-    lifespan_max: int
     remove_ineligible_immediately: bool
-    offspring_removal_rate: float  # Probability (0.0-1.0) that offspring are removed (sold/given away)
+    
+    # Cycle-based fields
+    sexual_maturity_months: float
+    max_fertility_age_years: Dict[str, float]  # {'male': ..., 'female': ...}
+    gestation_period_days: float
+    nursing_period_days: float
+    menstrual_cycle_days: float
+    nearing_end_cycles: int
+    
+    # Converted to cycles (calculated from above)
+    gestation_cycles: int
+    nursing_cycles: int
+    maturity_cycles: int
+    max_fertility_age_cycles: Dict[str, int]
+    lifespan_cycles_min: int
+    lifespan_cycles_max: int
 
 
 @dataclass
@@ -44,7 +54,7 @@ class BreederConfig:
 class SimulationConfig:
     """Complete simulation configuration."""
     seed: int
-    generations: int
+    cycles: int  # Number of cycles to run
     initial_population_size: int
     initial_sex_ratio: Dict[str, float]
     creature_archetype: CreatureArchetypeConfig
@@ -102,9 +112,9 @@ def validate_config(config: Dict[str, Any]) -> None:
     Raises:
         ConfigurationError: If validation fails
     """
-    # Required top-level fields
+    # Required top-level fields (generations/cycles handled separately)
     required_fields = [
-        'seed', 'generations', 'initial_population_size',
+        'seed', 'initial_population_size',
         'initial_sex_ratio', 'creature_archetype', 'breeders', 'traits'
     ]
     
@@ -116,9 +126,11 @@ def validate_config(config: Dict[str, Any]) -> None:
     if not isinstance(config['seed'], int):
         raise ConfigurationError("seed must be an integer")
     
-    # Validate generations
-    if not isinstance(config['generations'], int) or config['generations'] < 1:
-        raise ConfigurationError("generations must be a positive integer")
+    # Validate cycles
+    if 'cycles' not in config:
+        raise ConfigurationError("Missing required field: cycles")
+    if not isinstance(config['cycles'], int) or config['cycles'] < 1:
+        raise ConfigurationError("cycles must be a positive integer")
     
     # Validate initial_population_size
     if not isinstance(config['initial_population_size'], int) or config['initial_population_size'] < 1:
@@ -138,42 +150,57 @@ def validate_config(config: Dict[str, Any]) -> None:
     if not isinstance(archetype, dict):
         raise ConfigurationError("creature_archetype must be a dictionary")
     
-    required_archetype_fields = ['max_breeding_age', 'max_litters', 'lifespan', 'remove_ineligible_immediately']
-    for field in required_archetype_fields:
+    # Validate cycle-based fields (required)
+    required_cycle_fields = [
+        'sexual_maturity_months', 'max_fertility_age_years',
+        'gestation_period_days', 'nursing_period_days', 'menstrual_cycle_days',
+        'nearing_end_cycles', 'lifespan'
+    ]
+    
+    for field in required_cycle_fields:
         if field not in archetype:
             raise ConfigurationError(f"creature_archetype missing required field: {field}")
     
-    # Validate offspring_removal_rate (optional, defaults to 0.0)
-    if 'offspring_removal_rate' not in archetype:
-        archetype['offspring_removal_rate'] = 0.0  # Default: no removal
-    else:
-        removal_rate = archetype['offspring_removal_rate']
-        if not isinstance(removal_rate, (int, float)) or not (0.0 <= removal_rate <= 1.0):
-            raise ConfigurationError("offspring_removal_rate must be a number between 0.0 and 1.0")
-    
-    max_age = archetype['max_breeding_age']
-    if not isinstance(max_age, dict) or 'male' not in max_age or 'female' not in max_age:
-        raise ConfigurationError("max_breeding_age must contain 'male' and 'female' keys")
-    if not (isinstance(max_age['male'], int) and max_age['male'] > 0):
-        raise ConfigurationError("max_breeding_age.male must be a positive integer")
-    if not (isinstance(max_age['female'], int) and max_age['female'] > 0):
-        raise ConfigurationError("max_breeding_age.female must be a positive integer")
-    
-    if not isinstance(archetype['max_litters'], int) or archetype['max_litters'] < 0:
-        raise ConfigurationError("max_litters must be a non-negative integer")
-    
-    lifespan = archetype['lifespan']
-    if not isinstance(lifespan, dict) or 'min' not in lifespan or 'max' not in lifespan:
-        raise ConfigurationError("lifespan must contain 'min' and 'max' keys")
-    if not (isinstance(lifespan['min'], int) and lifespan['min'] > 0):
-        raise ConfigurationError("lifespan.min must be a positive integer")
-    if not (isinstance(lifespan['max'], int) and lifespan['max'] > 0):
-        raise ConfigurationError("lifespan.max must be a positive integer")
-    if lifespan['min'] > lifespan['max']:
-        raise ConfigurationError("lifespan.min must be <= lifespan.max")
-    
-    if not isinstance(archetype['remove_ineligible_immediately'], bool):
-        raise ConfigurationError("remove_ineligible_immediately must be a boolean")
+    # Validate cycle-based fields
+    if True:  # All cycle-based fields are required
+        # Validate lifespan (required for cycle-based, interpreted as years)
+        if 'lifespan' not in archetype:
+            raise ConfigurationError("creature_archetype.lifespan is required for cycle-based configuration")
+        lifespan = archetype['lifespan']
+        if not isinstance(lifespan, dict) or 'min' not in lifespan or 'max' not in lifespan:
+            raise ConfigurationError("lifespan must contain 'min' and 'max' keys")
+        if not (isinstance(lifespan['min'], (int, float)) and lifespan['min'] > 0):
+            raise ConfigurationError("lifespan.min must be a positive number")
+        if not (isinstance(lifespan['max'], (int, float)) and lifespan['max'] > 0):
+            raise ConfigurationError("lifespan.max must be a positive number")
+        if lifespan['min'] > lifespan['max']:
+            raise ConfigurationError("lifespan.min must be <= lifespan.max")
+        
+        if not isinstance(archetype['sexual_maturity_months'], (int, float)) or archetype['sexual_maturity_months'] <= 0:
+            raise ConfigurationError("sexual_maturity_months must be a positive number")
+        
+        max_fertility = archetype['max_fertility_age_years']
+        if not isinstance(max_fertility, dict) or 'male' not in max_fertility or 'female' not in max_fertility:
+            raise ConfigurationError("max_fertility_age_years must contain 'male' and 'female' keys")
+        if not (isinstance(max_fertility['male'], (int, float)) and max_fertility['male'] > 0):
+            raise ConfigurationError("max_fertility_age_years.male must be a positive number")
+        if not (isinstance(max_fertility['female'], (int, float)) and max_fertility['female'] > 0):
+            raise ConfigurationError("max_fertility_age_years.female must be a positive number")
+        
+        if not isinstance(archetype['gestation_period_days'], (int, float)) or archetype['gestation_period_days'] <= 0:
+            raise ConfigurationError("gestation_period_days must be a positive number")
+        
+        if not isinstance(archetype['nursing_period_days'], (int, float)) or archetype['nursing_period_days'] < 0:
+            raise ConfigurationError("nursing_period_days must be a non-negative number")
+        
+        if not isinstance(archetype['menstrual_cycle_days'], (int, float)) or archetype['menstrual_cycle_days'] <= 0:
+            raise ConfigurationError("menstrual_cycle_days must be a positive number")
+        
+        if not isinstance(archetype['nearing_end_cycles'], int) or archetype['nearing_end_cycles'] < 0:
+            raise ConfigurationError("nearing_end_cycles must be a non-negative integer")
+        
+        if not isinstance(archetype.get('remove_ineligible_immediately', False), bool):
+            raise ConfigurationError("remove_ineligible_immediately must be a boolean")
     
     # Validate breeders
     breeders = config['breeders']
@@ -251,6 +278,50 @@ def validate_config(config: Dict[str, Any]) -> None:
                     raise ConfigurationError(f"Trait {trait_id} genotype {genotype_str} has invalid sex: {genotype['sex']}")
 
 
+def days_to_cycles(days: float, menstrual_cycle_days: float) -> int:
+    """
+    Convert days to cycles, rounding to nearest whole cycle.
+    
+    Args:
+        days: Number of days
+        menstrual_cycle_days: Days per menstrual cycle
+        
+    Returns:
+        Number of cycles (rounded)
+    """
+    return round(days / menstrual_cycle_days)
+
+
+def months_to_cycles(months: float, menstrual_cycle_days: float) -> int:
+    """
+    Convert months to cycles.
+    
+    Args:
+        months: Number of months
+        menstrual_cycle_days: Days per menstrual cycle
+        
+    Returns:
+        Number of cycles (rounded)
+    """
+    days = months * 30.44  # Average days per month
+    return days_to_cycles(days, menstrual_cycle_days)
+
+
+def years_to_cycles(years: float, menstrual_cycle_days: float) -> int:
+    """
+    Convert years to cycles.
+    
+    Args:
+        years: Number of years
+        menstrual_cycle_days: Days per menstrual cycle
+        
+    Returns:
+        Number of cycles (rounded)
+    """
+    days = years * 365.25  # Account for leap years
+    return days_to_cycles(days, menstrual_cycle_days)
+
+
 def normalize_config(config: Dict[str, Any]) -> None:
     """
     Normalize configuration values (e.g., normalize genotype frequencies).
@@ -276,6 +347,49 @@ def normalize_config(config: Dict[str, Any]) -> None:
         # Normalize frequencies
         for genotype in genotypes:
             genotype['initial_freq'] /= total_freq
+    
+    # Convert cycle-based time units to cycles if present
+    archetype = config.get('creature_archetype', {})
+    if 'menstrual_cycle_days' in archetype:
+        menstrual_cycle_days = archetype['menstrual_cycle_days']
+        
+        # Convert gestation period
+        if 'gestation_period_days' in archetype:
+            archetype['gestation_cycles'] = days_to_cycles(
+                archetype['gestation_period_days'], menstrual_cycle_days
+            )
+        
+        # Convert nursing period
+        if 'nursing_period_days' in archetype:
+            archetype['nursing_cycles'] = days_to_cycles(
+                archetype['nursing_period_days'], menstrual_cycle_days
+            )
+        
+        # Convert sexual maturity
+        if 'sexual_maturity_months' in archetype:
+            archetype['maturity_cycles'] = months_to_cycles(
+                archetype['sexual_maturity_months'], menstrual_cycle_days
+            )
+        
+        # Convert max fertility age
+        if 'max_fertility_age_years' in archetype:
+            max_fertility = archetype['max_fertility_age_years']
+            archetype['max_fertility_age_cycles'] = {
+                'male': years_to_cycles(max_fertility['male'], menstrual_cycle_days),
+                'female': years_to_cycles(max_fertility['female'], menstrual_cycle_days)
+            }
+        
+        # Convert lifespan (min/max in years) to cycles
+        if 'lifespan' in archetype:
+            lifespan = archetype['lifespan']
+            if isinstance(lifespan, dict) and 'min' in lifespan and 'max' in lifespan:
+                # Lifespan range in years, convert to cycles
+                archetype['lifespan_cycles_min'] = years_to_cycles(
+                    lifespan['min'], menstrual_cycle_days
+                )
+                archetype['lifespan_cycles_max'] = years_to_cycles(
+                    lifespan['max'], menstrual_cycle_days
+                )
 
 
 def build_config(raw_config: Dict[str, Any]) -> SimulationConfig:
@@ -289,14 +403,27 @@ def build_config(raw_config: Dict[str, Any]) -> SimulationConfig:
         SimulationConfig object
     """
     archetype = raw_config['creature_archetype']
+    lifespan = archetype['lifespan']
+    
+    # Cycle-based configuration (only supported format)
     creature_archetype = CreatureArchetypeConfig(
-        max_breeding_age_male=archetype['max_breeding_age']['male'],
-        max_breeding_age_female=archetype['max_breeding_age']['female'],
-        max_litters=archetype['max_litters'],
-        lifespan_min=archetype['lifespan']['min'],
-        lifespan_max=archetype['lifespan']['max'],
-        remove_ineligible_immediately=archetype['remove_ineligible_immediately'],
-        offspring_removal_rate=archetype.get('offspring_removal_rate', 0.0)
+        remove_ineligible_immediately=archetype.get('remove_ineligible_immediately', False),
+        
+        # Cycle-based fields
+        sexual_maturity_months=archetype['sexual_maturity_months'],
+        max_fertility_age_years=archetype['max_fertility_age_years'],
+        gestation_period_days=archetype['gestation_period_days'],
+        nursing_period_days=archetype['nursing_period_days'],
+        menstrual_cycle_days=archetype['menstrual_cycle_days'],
+        nearing_end_cycles=archetype['nearing_end_cycles'],
+        
+        # Converted cycles (calculated in normalize_config)
+        gestation_cycles=archetype.get('gestation_cycles', 0),
+        nursing_cycles=archetype.get('nursing_cycles', 0),
+        maturity_cycles=archetype.get('maturity_cycles', 0),
+        max_fertility_age_cycles=archetype.get('max_fertility_age_cycles', {'male': 0, 'female': 0}),
+        lifespan_cycles_min=archetype.get('lifespan_cycles_min', 0),
+        lifespan_cycles_max=archetype.get('lifespan_cycles_max', 0)
     )
     
     breeders = raw_config['breeders']
@@ -322,7 +449,7 @@ def build_config(raw_config: Dict[str, Any]) -> SimulationConfig:
     
     return SimulationConfig(
         seed=raw_config['seed'],
-        generations=raw_config['generations'],
+        cycles=raw_config['cycles'],
         initial_population_size=raw_config['initial_population_size'],
         initial_sex_ratio=raw_config['initial_sex_ratio'],
         creature_archetype=creature_archetype,

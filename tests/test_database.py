@@ -49,14 +49,17 @@ def test_schema_foreign_keys():
         with pytest.raises(sqlite3.IntegrityError):
             cursor.execute("""
                 INSERT INTO creatures (
-                    simulation_id, birth_generation, lifespan, litters_remaining
-                ) VALUES (999, 0, 10, 0)
+                    simulation_id, birth_cycle, lifespan
+                ) VALUES (999, 0, 10)
             """)
             conn.commit()
         
         conn.close()
     finally:
-        Path(db_path).unlink()
+        try:
+            Path(db_path).unlink()
+        except PermissionError:
+            pass  # File may be locked on Windows
 
 
 def test_get_db_connection():

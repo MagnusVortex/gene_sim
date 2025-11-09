@@ -14,6 +14,10 @@ else:
 class Breeder(ABC):
     """Abstract base class for breeder strategies."""
     
+    def __init__(self):
+        """Initialize breeder with no ID (will be assigned when persisted)."""
+        self.breeder_id: Optional[int] = None
+    
     @abstractmethod
     def select_pairs(
         self,
@@ -70,6 +74,7 @@ class InbreedingAvoidanceBreeder(Breeder):
         Args:
             max_inbreeding_coefficient: Maximum allowed inbreeding coefficient for offspring
         """
+        super().__init__()
         self.max_inbreeding_coefficient = max_inbreeding_coefficient
     
     def select_pairs(
@@ -125,6 +130,7 @@ class KennelClubBreeder(Breeder):
             max_inbreeding_coefficient: Maximum allowed inbreeding (optional)
             required_phenotype_ranges: List of {trait_id, min, max} dicts (optional)
         """
+        super().__init__()
         self.target_phenotypes = target_phenotypes
         self.max_inbreeding_coefficient = max_inbreeding_coefficient
         self.required_phenotype_ranges = required_phenotype_ranges or []
@@ -247,6 +253,7 @@ class UnrestrictedPhenotypeBreeder(Breeder):
         Args:
             target_phenotypes: List of {trait_id, phenotype} dicts
         """
+        super().__init__()
         self.target_phenotypes = target_phenotypes
     
     def _matches_target_phenotypes(self, creature: 'Creature', traits: List) -> bool:

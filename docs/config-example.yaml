@@ -38,12 +38,6 @@ creature_archetype:
   # If true: remove when breeding age exceeded or litters_remaining <= 0
   # If false: persist until they age out (lifespan)
   remove_ineligible_immediately: false
-  
-  # Probability (0.0-1.0) that offspring are removed from the population (sold/given away)
-  # Removed offspring are still persisted to the database for historical tracking
-  # This helps control population growth by reducing the number of creatures that enter the breeding pool
-  # Example: 0.5 means 50% of offspring are removed, 0.0 means no removal (default)
-  offspring_removal_rate: 0.0
 
 # Target phenotypes for phenotype-selecting breeders
 # Used by both kennel_club and unrestricted_phenotype breeders
@@ -54,8 +48,20 @@ target_phenotypes:
     phenotype: "Large"
 
 # Breeder configuration
+# Breeders are entities that own creatures and select mating pairs
+# Each creature is owned by exactly one breeder at any given time
+# 
+# Ownership Rules:
+# - Founders are assigned to breeders evenly at initialization
+# - Offspring inherit ownership from the female parent's breeder
+# - Ownership can transfer randomly between breeders (2-3 owners per creature on average)
+# - Breeders give away ALL offspring unless a parent is nearing end of reproduction
+#   (within 2 generations of max breeding age, or females with ≤1 litter remaining)
+#   In that case, the breeder keeps ONE offspring as a replacement
+# - This ownership-based removal helps stabilize population growth
 breeders:
   # Number of breeders of each type (actual counts, not percentages)
+  # Each breeder is assigned an ID and persists to the database
   random: 50
   inbreeding_avoidance: 30
   kennel_club: 15

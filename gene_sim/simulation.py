@@ -13,7 +13,7 @@ from .exceptions import SimulationError, DatabaseError
 from .database import create_database, get_db_connection
 from .models.trait import Trait
 from .models.population import Population
-from .models.generation import Generation
+from .models.generation import Cycle
 from .models.breeder import (
     RandomBreeder, InbreedingAvoidanceBreeder,
     KennelClubBreeder, UnrestrictedPhenotypeBreeder
@@ -105,18 +105,21 @@ class Simulation:
             # Persist traits to database
             self._persist_traits()
             
-            # Create breeders
+            # Create simulation record (must be done before creating breeders and founders)
+            self._create_simulation_record()
+            
+            # Create breeders (must be done before creating founders so founders can be assigned)
             self._create_breeders()
             
             # Create initial population
             self.population = Population()
             self._create_initial_population()
             
-            # Create simulation record (must be done before persisting founders)
-            self._create_simulation_record()
-            
             # Persist founders immediately so they all have IDs from the start
             self._persist_founders()
+            
+            # Initialize cycle-based fields for founders
+            self._initialize_founder_cycles()
             
         except Exception as e:
             raise SimulationError(f"Failed to initialize simulation: {e}") from e
@@ -149,33 +152,86 @@ class Simulation:
         self.db_conn.commit()
     
     def _create_breeders(self) -> None:
-        """Create breeder instances according to configuration."""
+        """Create breeder instances according to configuration and persist to database."""
         breeders = []
+        breeder_index = 0
+        
+        cursor = self.db_conn.cursor()
         
         # Random breeders
         for _ in range(self.config.breeders.random):
-            breeders.append(RandomBreeder())
+            breeder = RandomBreeder()
+            breeders.append(breeder)
+            # Persist breeder to database
+            cursor.execute("""
+                INSERT INTO breeders (simulation_id, breeder_index, breeder_type)
+                VALUES (?, ?, 'random')
+            """, (self.simulation_id, breeder_index))
+            breeder.breeder_id = cursor.lastrowid
+            breeder_index += 1
         
         # Inbreeding avoidance breeders
         for _ in range(self.config.breeders.inbreeding_avoidance):
-            breeders.append(InbreedingAvoidanceBreeder(max_inbreeding_coefficient=0.25))
+            breeder = InbreedingAvoidanceBreeder(max_inbreeding_coefficient=0.25)
+            breeders.append(breeder)
+            cursor.execute("""
+                INSERT INTO breeders (simulation_id, breeder_index, breeder_type)
+                VALUES (?, ?, 'inbreeding_avoidance')
+            """, (self.simulation_id, breeder_index))
+            breeder.breeder_id = cursor.lastrowid
+            breeder_index += 1
         
         # Kennel club breeders
         kennel_config = self.config.breeders.kennel_club_config or {}
         for _ in range(self.config.breeders.kennel_club):
-            breeders.append(KennelClubBreeder(
+            breeder = KennelClubBreeder(
                 target_phenotypes=self.config.target_phenotypes,
                 max_inbreeding_coefficient=kennel_config.get('max_inbreeding_coefficient'),
                 required_phenotype_ranges=kennel_config.get('required_phenotype_ranges', [])
-            ))
+            )
+            breeders.append(breeder)
+            cursor.execute("""
+                INSERT INTO breeders (simulation_id, breeder_index, breeder_type)
+                VALUES (?, ?, 'kennel_club')
+            """, (self.simulation_id, breeder_index))
+            breeder.breeder_id = cursor.lastrowid
+            breeder_index += 1
         
         # Unrestricted phenotype breeders
         for _ in range(self.config.breeders.unrestricted_phenotype):
-            breeders.append(UnrestrictedPhenotypeBreeder(
+            breeder = UnrestrictedPhenotypeBreeder(
                 target_phenotypes=self.config.target_phenotypes
-            ))
+            )
+            breeders.append(breeder)
+            cursor.execute("""
+                INSERT INTO breeders (simulation_id, breeder_index, breeder_type)
+                VALUES (?, ?, 'unrestricted_phenotype')
+            """, (self.simulation_id, breeder_index))
+            breeder.breeder_id = cursor.lastrowid
+            breeder_index += 1
         
+        self.db_conn.commit()
         self.breeders = breeders
+    
+    def _initialize_founder_cycles(self) -> None:
+        """Initialize cycle-based fields for founders."""
+        archetype = self.config.creature_archetype
+        
+        for creature in self.population.creatures:
+            if creature.birth_cycle == 0:  # Founders
+                # Founders are born at cycle 0, so they're already mature
+                # Calculate sexual maturity cycle (0 for founders, they start mature)
+                maturity_cycles = archetype.maturity_cycles
+                creature.sexual_maturity_cycle = 0  # Founders start mature
+                
+                # Calculate max_fertility_age_cycle
+                max_fertility_age_years = archetype.max_fertility_age_years[creature.sex]
+                cycles_per_year = 365.25 / archetype.menstrual_cycle_days
+                creature.max_fertility_age_cycle = int(max_fertility_age_years * cycles_per_year)
+                
+                # Founders have no conception cycle
+                creature.conception_cycle = None
+                creature.generation = 0  # Founders are generation 0
     
     def _create_initial_population(self) -> None:
         """Create initial population of founders."""
@@ -195,35 +251,33 @@ class Simulation:
                 genotype = trait.get_genotype_by_frequency(self.rng)
                 genome[trait.trait_id] = genotype.genotype
             
-            # Sample lifespan
+            # Sample lifespan (in cycles)
             lifespan = self.rng.integers(
-                self.config.creature_archetype.lifespan_min,
-                self.config.creature_archetype.lifespan_max + 1
+                self.config.creature_archetype.lifespan_cycles_min,
+                self.config.creature_archetype.lifespan_cycles_max + 1
             )
             
-            # Initialize litters_remaining for females
-            litters_remaining = (
-                self.config.creature_archetype.max_litters
-                if sex == 'female' else 0
-            )
+            # Assign founder to a breeder (distribute evenly)
+            breeder_index = i % len(self.breeders) if self.breeders else 0
+            breeder_id = self.breeders[breeder_index].breeder_id if self.breeders else None
             
             creature = Creature(
                 simulation_id=0,  # Will be updated after simulation record created
-                birth_generation=0,
+                birth_cycle=0,
                 sex=sex,
                 genome=genome,
                 parent1_id=None,
                 parent2_id=None,
+                breeder_id=breeder_id,
                 inbreeding_coefficient=0.0,
-                litters_remaining=litters_remaining,
                 lifespan=lifespan,
                 is_alive=True
             )
             
             founders.append(creature)
         
-        # Add founders to population with current_generation=0
-        self.population.add_creatures(founders, current_generation=0)
+        # Add founders to population with current_cycle=0
+        self.population.add_creatures(founders, current_cycle=0)
     
     def _create_simulation_record(self) -> None:
         """Create simulation record in database."""
@@ -240,9 +294,7 @@ class Simulation:
         
         self.simulation_id = cursor.lastrowid
         
-        # Update creature simulation_ids (will be persisted in _persist_founders)
-        for creature in self.population.creatures:
-            creature.simulation_id = self.simulation_id
+        # Note: Creature simulation_ids will be updated in _persist_founders
     
     def _persist_founders(self) -> None:
         """
@@ -252,8 +304,12 @@ class Simulation:
         This method persists all founders right after they are created and before any
         breeding occurs.
         """
-        # Get all founders (birth_generation = 0)
-        founders = [c for c in self.population.creatures if c.birth_generation == 0]
+        # Get all founders (birth_cycle = 0)
+        founders = [c for c in self.population.creatures if c.birth_cycle == 0]
+        
+        # Update simulation_id for all founders
+        for creature in founders:
+            creature.simulation_id = self.simulation_id
         
         if founders:
             # Persist founders to database immediately
@@ -278,13 +334,15 @@ class Simulation:
             if self.db_conn is None:
                 self.initialize()
             
-            # Execute generations
-            generation = Generation(0)
+            # Execute cycles
+            cycle = Cycle(0)
             
-            for gen_num in range(self.config.generations):
-                generation.generation_number = gen_num
+            cycles_to_run = self.config.cycles
+            
+            for cycle_num in range(cycles_to_run):
+                cycle.cycle_number = cycle_num
                 
-                stats = generation.execute_cycle(
+                stats = cycle.execute_cycle(
                     population=self.population,
                     breeders=self.breeders,
                     traits=self.traits,
@@ -295,7 +353,7 @@ class Simulation:
                 )
                 
                 # Update simulation progress
-                self._update_simulation_progress(gen_num + 1, len(self.population.creatures))
+                self._update_simulation_progress(cycle_num + 1, len(self.population.creatures))
             
             # Finalize simulation
             end_time = datetime.now()
@@ -308,7 +366,7 @@ class Simulation:
                 simulation_id=self.simulation_id,
                 seed=self.config.seed,
                 status='completed',
-                generations_completed=self.config.generations,
+                generations_completed=self.config.cycles,  # Store cycles in generations_completed (database column name)
                 final_population_size=len(self.population.creatures),
                 database_path=self.db_path,
                 config=self.config.raw_config,

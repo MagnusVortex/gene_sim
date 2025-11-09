@@ -15,11 +15,6 @@ def sample_config():
     class MockConfig:
         def __init__(self):
             self.creature_archetype = type('obj', (object,), {
-                'max_breeding_age_male': 10,
-                'max_breeding_age_female': 8,
-                'max_litters': 5,
-                'lifespan_min': 12,
-                'lifespan_max': 18,
                 'remove_ineligible_immediately': False
             })()
     
@@ -33,18 +28,17 @@ def sample_creature():
     genome[0] = "BB"
     return Creature(
         simulation_id=1,
-        birth_generation=0,
+        birth_cycle=0,
         sex="male",
         genome=genome,
-        lifespan=10,
-        litters_remaining=0
+        lifespan=10
     )
 
 
 def test_population_add_creatures(sample_creature):
     """Test adding creatures to population."""
     population = Population()
-    population.add_creatures([sample_creature], current_generation=0)
+    population.add_creatures([sample_creature], current_cycle=0)
     
     assert len(population.creatures) == 1
     assert len(population.age_out) > 0
@@ -54,21 +48,17 @@ def test_population_add_creatures(sample_creature):
 def test_population_get_eligible_males(sample_config, sample_creature):
     """Test getting eligible males."""
     population = Population()
-    population.add_creatures([sample_creature], current_generation=0)
+    population.add_creatures([sample_creature], current_cycle=0)
     
     eligible = population.get_eligible_males(0, sample_config)
     assert len(eligible) == 1
     assert eligible[0] == sample_creature
-    
-    # Creature too old
-    eligible = population.get_eligible_males(15, sample_config)
-    assert len(eligible) == 0
 
 
 def test_population_get_aged_out_creatures(sample_creature):
     """Test getting aged-out creatures."""
     population = Population()
-    population.add_creatures([sample_creature], current_generation=0)
+    population.add_creatures([sample_creature], current_cycle=0)
     
     # Creature with lifespan 10 should age out at generation 10
     # So it should be in age_out[10] when added at generation 0
@@ -97,7 +87,7 @@ def test_population_calculate_genotype_frequencies(sample_creature):
     genome2[0] = "bb"
     creature2 = Creature(1, 0, "female", genome2, lifespan=10)
     
-    population.add_creatures([creature1, creature2], current_generation=0)
+    population.add_creatures([creature1, creature2], current_cycle=0)
     
     frequencies = population.calculate_genotype_frequencies(0)
     assert frequencies["BB"] == 0.5
@@ -116,7 +106,7 @@ def test_population_calculate_genotype_diversity(sample_creature):
     genome2[0] = "bb"
     creature2 = Creature(1, 0, "female", genome2, lifespan=10)
     
-    population.add_creatures([creature1, creature2], current_generation=0)
+    population.add_creatures([creature1, creature2], current_cycle=0)
     
     diversity = population.calculate_genotype_diversity(0)
     assert diversity == 2

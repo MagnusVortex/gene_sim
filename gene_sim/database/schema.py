@@ -69,26 +69,61 @@ def create_schema(conn: sqlite3.Connection) -> None:
             )
         """)
         
+        # 3.5 Breeders table (to track breeder IDs and types)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS breeders (
+                breeder_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                simulation_id INTEGER NOT NULL,
+                breeder_index INTEGER NOT NULL CHECK(breeder_index >= 0),
+                breeder_type TEXT NOT NULL CHECK(breeder_type IN ('random', 'inbreeding_avoidance', 'kennel_club', 'unrestricted_phenotype')),
+                FOREIGN KEY (simulation_id) REFERENCES simulations(simulation_id) ON DELETE CASCADE,
+                UNIQUE(simulation_id, breeder_index)
+            )
+        """)
+        
         # 4. Creatures table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS creatures (
                 creature_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 simulation_id INTEGER NOT NULL,
-                birth_generation INTEGER NOT NULL CHECK(birth_generation >= 0),
+                birth_cycle INTEGER NOT NULL CHECK(birth_cycle >= 0),
                 sex TEXT CHECK(sex IN ('male', 'female')) NULL,
                 parent1_id INTEGER NULL,
                 parent2_id INTEGER NULL,
+                breeder_id INTEGER NULL,
                 inbreeding_coefficient REAL NOT NULL CHECK(inbreeding_coefficient >= 0.0 AND inbreeding_coefficient <= 1.0) DEFAULT 0.0,
-                litters_remaining INTEGER NOT NULL CHECK(litters_remaining >= 0),
                 lifespan INTEGER NOT NULL CHECK(lifespan > 0),
                 is_alive BOOLEAN DEFAULT 1,
+                conception_cycle INTEGER NULL,
+                sexual_maturity_cycle INTEGER NULL,
+                max_fertility_age_cycle INTEGER NULL,
+                gestation_end_cycle INTEGER NULL,
+                nursing_end_cycle INTEGER NULL,
+                generation INTEGER NULL,
                 FOREIGN KEY (simulation_id) REFERENCES simulations(simulation_id) ON DELETE CASCADE,
                 FOREIGN KEY (parent1_id) REFERENCES creatures(creature_id) ON DELETE SET NULL,
                 FOREIGN KEY (parent2_id) REFERENCES creatures(creature_id) ON DELETE SET NULL,
-                CHECK((birth_generation = 0) = (parent1_id IS NULL)),
-                CHECK((birth_generation = 0) = (parent2_id IS NULL))
+                FOREIGN KEY (breeder_id) REFERENCES breeders(breeder_id) ON DELETE SET NULL,
+                CHECK((birth_cycle = 0) = (parent1_id IS NULL)),
+                CHECK((birth_cycle = 0) = (parent2_id IS NULL))
             )
         """)
+        
+        # 4.1 Creature ownership history table (to track ownership changes)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS creature_ownership_history (
+                ownership_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                creature_id INTEGER NOT NULL,
+                breeder_id INTEGER NOT NULL,
+                transfer_generation INTEGER NOT NULL CHECK(transfer_generation >= 0),
+                FOREIGN KEY (creature_id) REFERENCES creatures(creature_id) ON DELETE CASCADE,
+                FOREIGN KEY (breeder_id) REFERENCES breeders(breeder_id) ON DELETE CASCADE
+            )
+        """)
+        
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_creature_ownership_creature ON creature_ownership_history(creature_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_creature_ownership_breeder ON creature_ownership_history(breeder_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_creature_ownership_generation ON creature_ownership_history(transfer_generation)")
         
         # 5. Creature genotypes table
         cursor.execute("""
@@ -163,9 +198,9 @@ def create_schema(conn: sqlite3.Connection) -> None:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_genotypes_phenotype ON genotypes(trait_id, phenotype)")
         
         # Creatures indexes
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_creatures_birth_generation ON creatures(simulation_id, birth_generation)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_creatures_birth_cycle ON creatures(simulation_id, birth_cycle)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_creatures_parents ON creatures(parent1_id, parent2_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_creatures_breeding_eligibility ON creatures(simulation_id, sex, birth_generation, litters_remaining, is_alive)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_creatures_breeding_eligibility ON creatures(simulation_id, sex, birth_cycle, is_alive)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_creatures_inbreeding ON creatures(simulation_id, inbreeding_coefficient)")
         
         # Creature genotypes indexes

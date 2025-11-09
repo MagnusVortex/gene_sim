@@ -14,49 +14,72 @@ class Creature:
     def __init__(
         self,
         simulation_id: int,
-        birth_generation: int,
+        birth_cycle: int,
         sex: Optional[str],
         genome: List[Optional[str]],  # List indexed by trait_id, None for unset traits
         parent1_id: Optional[int] = None,
         parent2_id: Optional[int] = None,
+        breeder_id: Optional[int] = None,
         inbreeding_coefficient: float = 0.0,
-        litters_remaining: int = 0,
         lifespan: int = 1,
         is_alive: bool = True,
-        creature_id: Optional[int] = None
+        creature_id: Optional[int] = None,
+        # Cycle-based fields
+        conception_cycle: Optional[int] = None,
+        sexual_maturity_cycle: Optional[int] = None,
+        max_fertility_age_cycle: Optional[int] = None,
+        gestation_end_cycle: Optional[int] = None,
+        nursing_end_cycle: Optional[int] = None,
+        generation: Optional[int] = None  # Lineage depth (max parent generation + 1)
     ):
         """
         Initialize a creature.
         
         Args:
             simulation_id: ID of simulation this creature belongs to
-            birth_generation: Generation when creature was born
+            birth_cycle: Cycle when creature was born (0 for founders)
             sex: 'male', 'female', or None
             genome: List of genotype strings indexed by trait_id (0-99)
             parent1_id: ID of first parent (None for founders)
             parent2_id: ID of second parent (None for founders)
+            breeder_id: ID of breeder who owns this creature (None if unowned)
             inbreeding_coefficient: Inbreeding coefficient (F) for this creature
-            litters_remaining: Number of litters remaining (for females)
-            lifespan: Individual lifespan in generations
+            lifespan: Individual lifespan in cycles
             is_alive: Whether creature is alive
             creature_id: Optional ID (assigned when persisted to database)
+            conception_cycle: Cycle when creature was conceived (None for founders)
+            sexual_maturity_cycle: Cycle when creature reaches sexual maturity
+            max_fertility_age_cycle: Cycle when fertility window closes
+            gestation_end_cycle: Cycle when current gestation ends (None if not gestating)
+            nursing_end_cycle: Cycle when current nursing period ends (None if not nursing)
+            generation: Lineage depth (max(parent1.generation, parent2.generation) + 1)
         """
         self.simulation_id = simulation_id
-        self.birth_generation = birth_generation
+        self.birth_cycle = birth_cycle
         self.sex = sex
         self.genome = genome  # List[str] indexed by trait_id
         self.parent1_id = parent1_id
         self.parent2_id = parent2_id
+        self.breeder_id = breeder_id
         self.inbreeding_coefficient = inbreeding_coefficient
-        self.litters_remaining = litters_remaining
         self.lifespan = lifespan
         self.is_alive = is_alive
         self.creature_id = creature_id
         
+        # Cycle-based fields
+        self.conception_cycle = conception_cycle
+        self.sexual_maturity_cycle = sexual_maturity_cycle
+        self.max_fertility_age_cycle = max_fertility_age_cycle
+        self.gestation_end_cycle = gestation_end_cycle
+        self.nursing_end_cycle = nursing_end_cycle
+        self.generation = generation  # Lineage depth
+        
         # Validate founders have no parents
-        if birth_generation == 0:
+        if birth_cycle == 0:
             if parent1_id is not None or parent2_id is not None:
-                raise ValueError("Founders (birth_generation=0) must have no parents")
+                raise ValueError("Founders (birth_cycle=0) must have no parents")
+            if conception_cycle is not None:
+                raise ValueError("Founders cannot have a conception_cycle")
         else:
             # For offspring, parent IDs can be None initially (in-memory creatures)
             # They will be set when parents are persisted to database
@@ -66,24 +89,41 @@ class Creature:
         if not (0.0 <= inbreeding_coefficient <= 1.0):
             raise ValueError(f"inbreeding_coefficient must be between 0.0 and 1.0, got {inbreeding_coefficient}")
     
-    def calculate_age(self, current_generation: int) -> int:
+    def calculate_age(self, current_cycle: int) -> int:
         """
-        Calculate creature's age in generations.
+        Calculate creature's age in cycles.
         
         Args:
-            current_generation: Current simulation generation
+            current_cycle: Current simulation cycle
             
         Returns:
-            Age in generations
+            Age in cycles
         """
-        return current_generation - self.birth_generation
+        return current_cycle - self.birth_cycle
     
-    def is_breeding_eligible(self, current_generation: int, config: 'SimulationConfig') -> bool:
+    def calculate_age_days(self, current_cycle: int, menstrual_cycle_days: float) -> float:
+        """
+        Calculate creature's age in days.
+        
+        Args:
+            current_cycle: Current simulation cycle
+            menstrual_cycle_days: Days per menstrual cycle
+            
+        Returns:
+            Age in days
+        """
+        return (current_cycle - self.birth_cycle) * menstrual_cycle_days
+    
+    def is_breeding_eligible(
+        self, 
+        current_cycle: int, 
+        config: 'SimulationConfig'
+    ) -> bool:
         """
         Check if creature is eligible for breeding.
         
         Args:
-            current_generation: Current simulation generation
+            current_cycle: Current simulation cycle
             config: Simulation configuration
             
         Returns:
@@ -92,25 +132,48 @@ class Creature:
         if not self.is_alive:
             return False
         
-        age = self.calculate_age(current_generation)
-        
-        # Check age limit
-        if self.sex == 'male':
-            max_age = config.creature_archetype.max_breeding_age_male
-        elif self.sex == 'female':
-            max_age = config.creature_archetype.max_breeding_age_female
-        else:
-            # No sex specified, use male limit as default
-            max_age = config.creature_archetype.max_breeding_age_male
-        
-        if age > max_age:
+        # Check if reached sexual maturity
+        if self.sexual_maturity_cycle is not None and current_cycle < self.sexual_maturity_cycle:
             return False
         
-        # Check litter limit (only for females)
-        if self.sex == 'female' and self.litters_remaining <= 0:
+        # Check if past max fertility age
+        if self.max_fertility_age_cycle is not None and current_cycle >= self.max_fertility_age_cycle:
             return False
+        
+        # Check gestation (females cannot breed while gestating)
+        if self.sex == 'female' and self.gestation_end_cycle is not None:
+            if current_cycle < self.gestation_end_cycle:
+                return False
+        
+        # Check nursing (females cannot breed while nursing)
+        if self.sex == 'female' and self.nursing_end_cycle is not None:
+            if current_cycle < self.nursing_end_cycle:
+                return False
         
         return True
+    
+    def is_nearing_end_of_reproduction(self, current_cycle: int, config: 'SimulationConfig') -> bool:
+        """
+        Check if creature is nearing the end of its reproductive capabilities.
+        
+        A creature is considered "nearing the end" if:
+        - Within `nearing_end_cycles` of max_fertility_age_cycle
+        
+        Args:
+            current_cycle: Current simulation cycle
+            config: Simulation configuration
+            
+        Returns:
+            True if creature is nearing end of reproduction, False otherwise
+        """
+        if not self.is_alive:
+            return False
+        
+        if self.max_fertility_age_cycle is None:
+            return False
+        
+        nearing_end_cycles = config.creature_archetype.nearing_end_cycles
+        return current_cycle >= (self.max_fertility_age_cycle - nearing_end_cycles)
     
     def produce_gamete(self, trait_id: int, trait: 'Trait', rng: np.random.Generator) -> str:
         """
@@ -251,11 +314,12 @@ class Creature:
         cls,
         parent1: 'Creature',
         parent2: 'Creature',
-        birth_generation: int,
+        conception_cycle: int,
         simulation_id: int,
         traits: List['Trait'],
         rng: np.random.Generator,
-        max_litters: int
+        config: 'SimulationConfig',
+        breeder_id: Optional[int] = None
     ) -> 'Creature':
         """
         Create an offspring from two parents.
@@ -263,17 +327,24 @@ class Creature:
         Args:
             parent1: First parent
             parent2: Second parent
-            birth_generation: Generation when offspring is born
+            conception_cycle: Cycle when offspring is conceived
             simulation_id: Simulation ID
             traits: List of all traits in simulation
             rng: Random number generator
-            max_litters: Maximum litters for females
+            config: Simulation configuration
+            breeder_id: Optional breeder ID (inherited from female parent if None)
             
         Returns:
             New Creature instance
         """
+        
         # Determine sex (50/50 for now, could be configurable)
         sex = rng.choice(['male', 'female'])
+        
+        # Assign breeder_id (inherited from parents if not specified)
+        # Offspring belong to the breeder who owns the female parent
+        if breeder_id is None:
+            breeder_id = parent2.breeder_id if parent2.sex == 'female' else parent1.breeder_id
         
         # Create genome by combining gametes
         max_trait_id = max(t.trait_id for t in traits) if traits else 0
@@ -318,18 +389,33 @@ class Creature:
         # Calculate inbreeding coefficient
         inbreeding_coefficient = cls.calculate_inbreeding_coefficient(parent1, parent2)
         
-        # Initialize litters_remaining (only for females)
-        litters_remaining = max_litters if sex == 'female' else 0
+        # Calculate cycle-based fields
+        archetype = config.creature_archetype
+        gestation_cycles = archetype.gestation_cycles
+        maturity_cycles = archetype.maturity_cycles
+        
+        birth_cycle = conception_cycle + gestation_cycles
+        sexual_maturity_cycle = conception_cycle + gestation_cycles + maturity_cycles
+        
+        # Calculate max_fertility_age_cycle
+        max_fertility_age_years = archetype.max_fertility_age_years[sex]
+        cycles_per_year = 365.25 / archetype.menstrual_cycle_days
+        max_fertility_age_cycle = birth_cycle + int(max_fertility_age_years * cycles_per_year)
+        
+        # Calculate generation (lineage depth)
+        parent1_gen = parent1.generation if parent1.generation is not None else 0
+        parent2_gen = parent2.generation if parent2.generation is not None else 0
+        generation = max(parent1_gen, parent2_gen) + 1
         
         # All creatures are persisted immediately, so parents must have IDs
         if parent1.creature_id is None:
             raise ValueError(
-                f"Parent1 (birth_gen={parent1.birth_generation}) does not have creature_id. "
+                f"Parent1 (birth_cycle={parent1.birth_cycle}) does not have creature_id. "
                 f"All creatures must be persisted immediately upon creation."
             )
         if parent2.creature_id is None:
             raise ValueError(
-                f"Parent2 (birth_gen={parent2.birth_generation}) does not have creature_id. "
+                f"Parent2 (birth_cycle={parent2.birth_cycle}) does not have creature_id. "
                 f"All creatures must be persisted immediately upon creation."
             )
         parent1_id = parent1.creature_id
@@ -337,14 +423,20 @@ class Creature:
         
         return cls(
             simulation_id=simulation_id,
-            birth_generation=birth_generation,
+            birth_cycle=birth_cycle,
             sex=sex,
             genome=genome,
             parent1_id=parent1_id,
             parent2_id=parent2_id,
+            breeder_id=breeder_id,
             inbreeding_coefficient=inbreeding_coefficient,
-            litters_remaining=litters_remaining,
             lifespan=0,  # Will be set when added to population
-            is_alive=True
+            is_alive=True,
+            conception_cycle=conception_cycle,
+            sexual_maturity_cycle=sexual_maturity_cycle,
+            max_fertility_age_cycle=max_fertility_age_cycle,
+            gestation_end_cycle=None,  # Not gestating yet (will be set when born)
+            nursing_end_cycle=None,  # Not nursing yet
+            generation=generation
         )
 

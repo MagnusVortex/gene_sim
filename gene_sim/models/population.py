@@ -13,15 +13,19 @@ class Population:
     def __init__(self):
         """Initialize empty population."""
         self.creatures: List[Creature] = []
-        # Aging-out list: List[List[Creature]] where index 0 = current generation
+        # Aging-out list: List[List[Creature]] where index 0 = current cycle
         self.age_out: List[List[Creature]] = []
     
-    def get_eligible_males(self, current_generation: int, config: 'SimulationConfig') -> List[Creature]:
+    def get_eligible_males(
+        self, 
+        current_cycle: int, 
+        config: 'SimulationConfig'
+    ) -> List[Creature]:
         """
         Get list of eligible male creatures for breeding.
         
         Args:
-            current_generation: Current simulation generation
+            current_cycle: Current simulation cycle
             config: Simulation configuration
             
         Returns:
@@ -29,15 +33,19 @@ class Population:
         """
         return [
             c for c in self.creatures
-            if c.sex == 'male' and c.is_breeding_eligible(current_generation, config)
+            if c.sex == 'male' and c.is_breeding_eligible(current_cycle, config)
         ]
     
-    def get_eligible_females(self, current_generation: int, config: 'SimulationConfig') -> List[Creature]:
+    def get_eligible_females(
+        self, 
+        current_cycle: int, 
+        config: 'SimulationConfig'
+    ) -> List[Creature]:
         """
         Get list of eligible female creatures for breeding.
         
         Args:
-            current_generation: Current simulation generation
+            current_cycle: Current simulation cycle
             config: Simulation configuration
             
         Returns:
@@ -45,34 +53,35 @@ class Population:
         """
         return [
             c for c in self.creatures
-            if c.sex == 'female' and c.is_breeding_eligible(current_generation, config)
+            if c.sex == 'female' and c.is_breeding_eligible(current_cycle, config)
         ]
     
-    def add_creatures(self, creatures: List[Creature], current_generation: int) -> None:
+    def add_creatures(self, creatures: List[Creature], current_cycle: int) -> None:
         """
         Add new creatures to the working pool and update aging-out list.
         
         Args:
             creatures: List of creatures to add
-            current_generation: Current simulation generation
+            current_cycle: Current simulation cycle
         """
         self.creatures.extend(creatures)
         
         # Update aging-out list
         for creature in creatures:
-            # Calculate relative generation when creature will age out
-            relative_generation = creature.birth_generation + creature.lifespan - current_generation
+            # Calculate relative cycle when creature will age out
+            # Age out when: current_cycle >= birth_cycle + lifespan
+            relative_cycle = creature.birth_cycle + creature.lifespan - current_cycle
             
             # Ensure aging-out list is large enough
-            while len(self.age_out) <= relative_generation:
+            while len(self.age_out) <= relative_cycle:
                 self.age_out.append([])
             
-            # Append creature to appropriate generation slot
-            self.age_out[relative_generation].append(creature)
+            # Append creature to appropriate cycle slot
+            self.age_out[relative_cycle].append(creature)
     
     def get_aged_out_creatures(self) -> List[Creature]:
         """
-        Get creatures who age out in the current generation.
+        Get creatures who age out in the current cycle.
         
         Returns:
             List of creatures aging out (from age_out[0])
@@ -105,7 +114,7 @@ class Population:
         if len(self.age_out) > 0:
             self.age_out = self.age_out[1:]
     
-    def advance_generation(self) -> None:
+    def advance_cycle(self) -> None:
         """
         Advance aging-out list by slicing off the first element.
         Should be called after remove_aged_out_creatures.
@@ -310,11 +319,11 @@ class Population:
         # and are needed by creatures being persisted
         parents_to_persist = set()
         for creature in creatures:
-            if creature.birth_generation > 0:  # Offspring
+            if creature.birth_cycle > 0:  # Offspring
                 # Find parents in population
                 for parent in self.creatures:
                     if parent.creature_id is None and parent not in creatures:
-                        # Check if this parent matches (simplified: check by birth_generation and simulation)
+                        # Check if this parent matches (simplified: check by birth_cycle and simulation)
                         # In a full implementation, we'd track parent references explicitly
                         if (creature.parent1_id is None or creature.parent2_id is None):
                             # We'll handle this by updating parent IDs after parents are persisted
@@ -325,10 +334,10 @@ class Population:
             parent1_id = creature.parent1_id
             parent2_id = creature.parent2_id
             
-            # Ensure parent IDs match birth_generation:
-            # - Founders (birth_generation = 0) must have NULL parent IDs
-            # - Offspring (birth_generation > 0) must have non-NULL parent IDs
-            if creature.birth_generation == 0:
+            # Ensure parent IDs match birth_cycle/birth_generation:
+            # - Founders (birth_cycle = 0) must have NULL parent IDs
+            # - Offspring (birth_cycle > 0) must have non-NULL parent IDs
+            if creature.birth_cycle == 0:
                 # Founders: ensure parent IDs are NULL
                 parent1_id = None
                 parent2_id = None
@@ -338,25 +347,33 @@ class Population:
                 # This should have been handled before calling this method
                 if parent1_id is None or parent2_id is None:
                     raise ValueError(
-                        f"Cannot persist offspring (birth_generation={creature.birth_generation}) "
+                        f"Cannot persist offspring (birth_cycle={creature.birth_cycle}) "
                         f"with NULL parent IDs. Parent IDs must be set before persistence."
                     )
             
             cursor.execute("""
                 INSERT INTO creatures (
-                    simulation_id, birth_generation, sex, parent1_id, parent2_id,
-                    inbreeding_coefficient, litters_remaining, lifespan, is_alive
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    simulation_id, birth_cycle, sex, parent1_id, parent2_id, breeder_id,
+                    inbreeding_coefficient, lifespan, is_alive,
+                    conception_cycle, sexual_maturity_cycle, max_fertility_age_cycle,
+                    gestation_end_cycle, nursing_end_cycle, generation
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 simulation_id,
-                creature.birth_generation,
+                creature.birth_cycle,
                 creature.sex,
                 parent1_id,
                 parent2_id,
+                creature.breeder_id,
                 creature.inbreeding_coefficient,
-                creature.litters_remaining,
                 creature.lifespan,
-                creature.is_alive
+                creature.is_alive,
+                creature.conception_cycle,
+                creature.sexual_maturity_cycle,
+                creature.max_fertility_age_cycle,
+                creature.gestation_end_cycle,
+                creature.nursing_end_cycle,
+                creature.generation
             ))
             creature_id = cursor.lastrowid
             creature.creature_id = creature_id
