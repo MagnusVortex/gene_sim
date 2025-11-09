@@ -158,14 +158,16 @@ A genealogical simulation system that models populations of creatures with genet
 - Designing SQLite schema for efficient querying
 - Defining API contracts and interfaces
 - Planning test strategy
+- **See `docs/TODO.md` for remaining design work before implementation**
 
 ## When Writing Code
 
 ### Before Implementing
-1. Check existing domain model docs in `docs/models/`
-2. Review requirements in `docs/requirements.md`
-3. Ensure design aligns with SQLite-first reporting architecture
-4. Consider performance implications for large populations
+1. Check `docs/TODO.md` for remaining design work
+2. Check existing domain model docs in `docs/models/`
+3. Review requirements in `docs/requirements.md`
+4. Ensure design aligns with SQLite-first reporting architecture
+5. Consider performance implications for large populations
 
 ### During Implementation
 1. Write tests alongside code (TDD approach)
@@ -207,6 +209,8 @@ rng = np.random.default_rng(seed=simulation.seed)
 ## References
 - Full requirements: `docs/requirements.md`
 - Domain model index: `docs/domain-model.md`
+- Database schema overview: `docs/database-schema.md`
+- Pre-implementation TODO: `docs/TODO.md`
 - Trait model specification: `docs/models/trait.md`
 - Additional model docs: `docs/models/*.md`
 

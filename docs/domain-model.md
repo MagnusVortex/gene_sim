@@ -18,11 +18,11 @@ The simulation system is built around these core domain entities:
 |--------|--------|----------|
 | **Trait** | ✅ Complete | [models/trait.md](models/trait.md) |
 | **Creature** | ✅ Complete | [models/creature.md](models/creature.md) |
-| **Breeder** | 🔄 In Progress | [models/breeder.md](models/breeder.md) |
-| **Population** | 📋 Planned | [models/population.md](models/population.md) |
-| **Generation** | 📋 Planned | [models/generation.md](models/generation.md) |
+| **Breeder** | ✅ Complete | [models/breeder.md](models/breeder.md) |
+| **Population** | ✅ Complete | [models/population.md](models/population.md) |
+| **Generation** | ✅ Complete | [models/generation.md](models/generation.md) |
+| **Simulation** | ✅ Complete | [models/simulation.md](models/simulation.md) |
 | **Mutation** | 📋 Phase 2 | [models/mutation.md](models/mutation.md) |
-| **Simulation** | 📋 Planned | [models/simulation.md](models/simulation.md) |
 
 ---
 
@@ -47,21 +47,21 @@ Strategy for selecting mating pairs from a population. Different breeders implem
 
 **Key Concepts:** Selection strategies, mate selection, breeding eligibility (fitness-based selection in Phase 2)
 
-**See:** [models/breeder.md](models/breeder.md) _(next)_
+**See:** [models/breeder.md](models/breeder.md)
 
 ### 2.4 Population
 Collection of creatures alive at a given point in the simulation. Creatures persist across generations, so population includes creatures from multiple birth generations. Manages demographic data and genetic diversity metrics.
 
 **Key Concepts:** Size, composition, diversity, statistics, age distribution
 
-**See:** [models/population.md](models/population.md) _(planned)_
+**See:** [models/population.md](models/population.md)
 
 ### 2.5 Generation
 Single iteration in the simulation timeline. Represents the state of the population at a specific point. Generation number is stored in memory (not database); only creature birth_generation is persisted.
 
 **Key Concepts:** Generation number (in-memory), timestamp, population snapshot
 
-**See:** [models/generation.md](models/generation.md) _(planned)_
+**See:** [models/generation.md](models/generation.md)
 
 ### 2.6 Mutation
 Genetic change event. Tracks when and where mutations occur, and how they propagate through lineages.
@@ -75,7 +75,7 @@ Complete experimental run with configuration. Orchestrates all entities and mana
 
 **Key Concepts:** Configuration, execution, state management, results
 
-**See:** [models/simulation.md](models/simulation.md) _(planned)_
+**See:** [models/simulation.md](models/simulation.md)
 
 ---
 
@@ -142,6 +142,7 @@ Simulation
 - Efficient querying for reporting
 - Foreign key constraints for referential integrity
 - Indexes optimized for time-series and lineage queries
+- **See:** [Database Schema Overview](database-schema.md) for complete schema documentation
 
 ### 5.3 Performance Optimization
 - Batch database operations where possible
@@ -156,21 +157,14 @@ Simulation
 ### Phase 1 (Current)
 1. ✅ **Trait Model** - Complete
 2. ✅ **Creature Model** - Complete
-3. 🔄 **Breeder Model** - Next priority
-4. **Population/Generation Models** - Container entities
-5. **Simulation Model** - Orchestration layer
+3. ✅ **Breeder Model** - Complete
+4. ✅ **Population Model** - Complete
+5. ✅ **Generation Model** - Complete
+6. ✅ **Simulation Model** - Complete
+7. **Implementation** - Ready to begin
 
 ### Phase 2 (Future)
 - **Mutation Model** - Advanced genetic changes
-
----
-
-## 7. Related Documents
-
-- [Requirements](requirements.md) - Overall system requirements
-- [Genetic System Architecture](genetic-architecture.md) - Detailed genetics mechanics _(planned)_
-- [API Contracts](api.md) - Public interfaces _(planned)_
-- [Database Schema](database-schema.md) - Complete SQLite schema _(planned)_
 
 ---
 

@@ -23,12 +23,15 @@ A **Creature** represents an individual organism in the simulation with a diploi
 | `parent1_id` | Integer | Foreign key to first parent (NULL for founders) |
 | `parent2_id` | Integer | Foreign key to second parent (NULL for founders) |
 | `litters_remaining` | Integer | Number of litters remaining for this creature (starts at max value from simulation config, decrements per litter) |
+| `lifespan` | Integer | Individual lifespan for this creature (sampled from lifespan range in simulation config at birth) |
 | `is_alive` | Boolean | Whether creature is alive in current generation (for mortality modeling) |
 
 **Design Notes:**
 - Creatures persist across generations (they don't die automatically each generation)
 - `birth_generation`: Fixed timestamp of when creature was born (stored in memory during simulation, persisted to database when creature is no longer relevant)
-- Age calculation: `age = current_generation - birth_generation` where `current_generation` is in-memory simulation state
+- `lifespan`: Individual lifespan sampled from config range at creation (fixed, never changes)
+- Age calculation: `age = current_generation - birth_generation` (calculated on-demand, not stored)
+- Creatures age out when `age >= lifespan` (where `age = current_generation - birth_generation`)
 - Creatures have diploid genomes (two alleles per gene)
 - Genome stored as array: `genome[trait_id] = genotype_string` (e.g., "BB", "Bb", "bb")
 - Phenotypes derived from genotypes via trait configuration
@@ -36,10 +39,8 @@ A **Creature** represents an individual organism in the simulation with a diploi
 - Breeding eligibility: Age limit and litters_remaining limit defined at simulation level
 
 **Key Distinction: `birth_generation` vs `current_generation`**
-- **`birth_generation`**: The generation number when the creature was born. This is **stored in memory** during simulation and is fixed, never changes. When creatures are persisted to the database (after they can no longer reproduce), `birth_generation` is written to the database. Used to calculate age and determine breeding eligibility.
-- **`current_generation`**: The current generation number in the simulation (increments each breeding cycle). This is **stored in memory as a simulation state variable** (not in database). Used to calculate creature age: `age = current_generation - birth_generation`.
-- Creatures persist across multiple simulation generations in memory, so a creature born in generation 5 will still exist in memory in generation 10 (age = 5) until it can no longer reproduce.
-- `birth_generation` is persisted to the database when creatures are written; `current_generation` is always a runtime simulation state.
+- **`birth_generation`**: Fixed generation when creature was born. Stored in memory during simulation, persisted to database when creature is written. Used to calculate age: `age = current_generation - birth_generation`.
+- **`current_generation`**: Runtime simulation state (in-memory only, not persisted). Increments each breeding cycle.
 
 ---
 
@@ -155,6 +156,7 @@ Creatures can be excluded from breeding based on their age (number of generation
 ```python
 age = current_simulation_generation - creature.birth_generation
 ```
+Age is calculated on-demand when needed, not stored as a mutable field.
 
 **Age Limit:**
 - Defined at simulation level (creature archetype configuration)
@@ -197,6 +199,7 @@ CREATE TABLE creatures (
     parent1_id INTEGER NULL,
     parent2_id INTEGER NULL,
     litters_remaining INTEGER NOT NULL CHECK(litters_remaining >= 0),
+    lifespan INTEGER NOT NULL CHECK(lifespan > 0),
     is_alive BOOLEAN DEFAULT 1,
     FOREIGN KEY (simulation_id) REFERENCES simulations(simulation_id) ON DELETE CASCADE,
     FOREIGN KEY (parent1_id) REFERENCES creatures(creature_id) ON DELETE SET NULL,
@@ -242,8 +245,8 @@ CREATE INDEX idx_creature_genotypes_creature ON creature_genotypes(creature_id);
 ```sql
 -- Example: Persisting creatures to database after they can no longer reproduce
 -- Founder creature (birth_generation 0) - persisted after becoming ineligible
-INSERT INTO creatures (simulation_id, birth_generation, sex, parent1_id, parent2_id, litters_remaining)
-VALUES (1, 0, 'male', NULL, NULL, 0);
+INSERT INTO creatures (simulation_id, birth_generation, sex, parent1_id, parent2_id, litters_remaining, lifespan)
+VALUES (1, 0, 'male', NULL, NULL, 0, 15);  -- lifespan sampled from config range at birth
 
 INSERT INTO creature_genotypes (creature_id, trait_id, genotype) VALUES
 (1, 0, 'BB'),  -- Eye Color: Brown
@@ -251,8 +254,8 @@ INSERT INTO creature_genotypes (creature_id, trait_id, genotype) VALUES
 (1, 2, 'AA');  -- Blood Type: A
 
 -- Offspring creature (birth_generation 1) - persisted after litters_remaining reached 0
-INSERT INTO creatures (simulation_id, birth_generation, sex, parent1_id, parent2_id, litters_remaining)
-VALUES (1, 1, 'female', 1, 2, 0);  -- litters_remaining = 0 when persisted
+INSERT INTO creatures (simulation_id, birth_generation, sex, parent1_id, parent2_id, litters_remaining, lifespan)
+VALUES (1, 1, 'female', 1, 2, 0, 17);  -- litters_remaining = 0 when persisted, lifespan sampled from config range at birth
 
 INSERT INTO creature_genotypes (creature_id, trait_id, genotype) VALUES
 (2, 0, 'Bb'),  -- Eye Color: Brown (heterozygous)
@@ -305,34 +308,20 @@ cursor.executemany(
 
 - Use EXPLAIN QUERY PLAN to verify index usage when querying historical data
 
-### 8.3 Memory Management
+### 8.3 Persistence Strategy
 
-**Working Pool Strategy:**
-- All creatures that can reproduce are kept in memory as part of the working pool
-- Creatures remain in memory while they are eligible for breeding (age and litters_remaining checks pass)
-- This allows fast access for breeding operations without database queries
+Creatures are persisted to the database when removed from the working pool. Persistence timing is controlled by `remove_ineligible_immediately` simulation configuration:
 
-**Persistence Strategy:**
-- After reproduction occurs, creatures that can no longer reproduce are identified (age limit exceeded or litters_remaining <= 0)
-- Before removing creatures from working memory:
-  1. Run aggregations for the current generation (genotype frequencies, phenotype distributions, etc.)
-  2. Write aggregation results to the SQL database
-  3. Write the creatures themselves to the SQL database (creatures table and creature_genotypes table)
-- After persistence, remove creatures from working memory
+- **If `true`:** Creatures are persisted and removed immediately after they can no longer reproduce (breeding age limit exceeded or `litters_remaining <= 0`)
+- **If `false`:** Creatures persist in working pool until they age out (`age >= lifespan`), then are persisted and removed
 
-**Generation Cycle:**
-1. Filter working pool for eligible creatures (age limits, litters_remaining, is_alive)
-2. Breeder selects pairs from eligible creatures
-3. Reproduction occurs (offspring created)
-4. Identify creatures that can no longer reproduce
-5. Persist ineligible creatures to database
-6. Remove ineligible creatures from working pool
+**Persistence Process** (handled by Population):
+1. Calculate generation statistics (genotype frequencies, etc.) from working pool
+2. Write statistics to `generation_stats` table
+3. Write creatures to `creatures` and `creature_genotypes` tables (batch inserts)
+4. Remove creatures from working memory
 
-**Benefits:**
-- Fast breeding operations (no database queries for eligible creatures)
-- Reduced memory footprint (only active breeding pool in memory)
-- Historical data preserved in database for analysis
-- Generation-level aggregations computed efficiently before persistence
+**Note:** See [Population Model](population.md) for working pool management details.
 
 ---
 
