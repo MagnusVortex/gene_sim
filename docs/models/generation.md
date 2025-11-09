@@ -62,6 +62,7 @@ Generation statistics are calculated before persistence:
 - Genotype frequencies per trait (from working pool)
 - Allele frequencies per trait
 - Heterozygosity per trait
+- Genotype diversity per trait (number of distinct genotypes present)
 - Phenotype distributions (can be calculated post-simulation from persisted data)
 
 **Note:** Statistics are calculated from the in-memory working pool before creatures are persisted. This ensures accurate counts before any removals occur.
@@ -126,7 +127,8 @@ class Generation:
 - **Database queries:** Use batch inserts for efficient persistence:
   - Insert one row into `generation_stats` per generation
   - Batch insert all genotype frequencies into `generation_genotype_frequencies` (one row per genotype)
-  - Batch insert all trait stats into `generation_trait_stats` (one row per trait)
+  - Batch insert all trait stats into `generation_trait_stats` (one row per trait, including genotype_diversity)
+- **Genotype diversity calculation:** Count distinct genotypes present in the working pool for each trait (number of unique genotype strings with frequency > 0)
 - **Statistics calculation:** Perform before creature removal to ensure accuracy
 - **Aged-out retrieval:** Use `population.get_aged_out_creatures(current_generation)` to efficiently retrieve creatures who age out (see [Population Model](population.md) for aging-out list details)
 - **Breeder distribution:** Distribute breeders according to configuration counts (actual numbers, not percentages)
@@ -183,6 +185,7 @@ CREATE TABLE generation_trait_stats (
     trait_id INTEGER NOT NULL CHECK(trait_id >= 0),
     allele_frequencies JSON NOT NULL,  -- Map of allele -> frequency
     heterozygosity REAL NOT NULL CHECK(heterozygosity >= 0 AND heterozygosity <= 1),
+    genotype_diversity INTEGER NOT NULL CHECK(genotype_diversity >= 0),  -- Number of distinct genotypes present
     FOREIGN KEY (simulation_id) REFERENCES simulations(simulation_id) ON DELETE CASCADE,
     FOREIGN KEY (simulation_id, generation) REFERENCES generation_stats(simulation_id, generation) ON DELETE CASCADE,
     FOREIGN KEY (trait_id) REFERENCES traits(trait_id) ON DELETE CASCADE,

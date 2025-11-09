@@ -29,20 +29,23 @@ A **Breeder** selects mating pairs from pre-filtered pools of eligible creatures
 - Use case: Baseline, control simulations
 
 ### 3.2 Inbreeding Avoidance Breeder
-- Calculates inbreeding coefficient for potential pairs
-- Avoids pairs with high relatedness (shared ancestors)
+- Calculates inbreeding coefficient for potential offspring using Wright's formula
+- Uses parent inbreeding coefficients (from `creature.inbreeding_coefficient`) and relationship coefficient
+- Avoids pairs that would produce offspring with high inbreeding coefficient
 - Use case: Maintaining genetic diversity
 
 ### 3.3 Kennel Club Breeder
-- Selects pairs based on a target collection of phenotypes
+- Selects pairs based on target phenotypes from simulation configuration
 - Follows guidelines from prestigious kennel clubs (e.g., breed standards, health requirements, lineage restrictions)
 - May enforce rules such as: avoiding certain genotype combinations, requiring specific phenotype ranges, limiting inbreeding within guidelines
+- Uses same target_phenotypes as unrestricted phenotype breeder (defined at top-level config)
 - Use case: Modeling formal breeding programs with established standards
 
 ### 3.4 Unrestricted Phenotype Breeder
-- Selects pairs based on the same target collection of phenotypes as Kennel Club Breeder
+- Selects pairs based on target phenotypes from simulation configuration
 - Follows no guidelines or restrictions
 - Purely selects for desired phenotypes without constraints
+- Uses same target_phenotypes as kennel club breeder (defined at top-level config)
 - Use case: Modeling breeding programs focused solely on phenotype outcomes
 
 ---

@@ -23,7 +23,7 @@ This document provides a comprehensive overview of the SQLite database schema fo
 | `creature_genotypes` | Genotypes for each trait per creature | `(creature_id, trait_id)` | [Creature Model](models/creature.md#72-genotypes-table-creature-genotypes) |
 | `generation_stats` | Demographic statistics per generation | `(simulation_id, generation)` | [Generation Model](models/generation.md#81-generation-stats-table) |
 | `generation_genotype_frequencies` | Genotype frequencies per generation | `(simulation_id, generation, trait_id, genotype)` | [Generation Model](models/generation.md#82-generation-genotype-frequencies-table) |
-| `generation_trait_stats` | Allele frequencies and heterozygosity per generation | `(simulation_id, generation, trait_id)` | [Generation Model](models/generation.md#83-generation-trait-stats-table) |
+| `generation_trait_stats` | Allele frequencies, heterozygosity, and genotype diversity per generation | `(simulation_id, generation, trait_id)` | [Generation Model](models/generation.md#83-generation-trait-stats-table) |
 
 ---
 
@@ -96,6 +96,7 @@ CREATE TABLE creatures (
     sex TEXT CHECK(sex IN ('male', 'female')) NULL,
     parent1_id INTEGER NULL,
     parent2_id INTEGER NULL,
+    inbreeding_coefficient REAL NOT NULL CHECK(inbreeding_coefficient >= 0.0 AND inbreeding_coefficient <= 1.0) DEFAULT 0.0,
     litters_remaining INTEGER NOT NULL CHECK(litters_remaining >= 0),
     lifespan INTEGER NOT NULL CHECK(lifespan > 0),
     is_alive BOOLEAN DEFAULT 1,
@@ -109,6 +110,7 @@ CREATE TABLE creatures (
 CREATE INDEX idx_creatures_birth_generation ON creatures(simulation_id, birth_generation);
 CREATE INDEX idx_creatures_parents ON creatures(parent1_id, parent2_id);
 CREATE INDEX idx_creatures_breeding_eligibility ON creatures(simulation_id, sex, birth_generation, litters_remaining, is_alive);
+CREATE INDEX idx_creatures_inbreeding ON creatures(simulation_id, inbreeding_coefficient);
 ```
 
 ### 3.5 Creature Genotypes Table
@@ -174,6 +176,7 @@ CREATE TABLE generation_trait_stats (
     trait_id INTEGER NOT NULL CHECK(trait_id >= 0),
     allele_frequencies JSON NOT NULL,
     heterozygosity REAL NOT NULL CHECK(heterozygosity >= 0 AND heterozygosity <= 1),
+    genotype_diversity INTEGER NOT NULL CHECK(genotype_diversity >= 0),
     FOREIGN KEY (simulation_id) REFERENCES simulations(simulation_id) ON DELETE CASCADE,
     FOREIGN KEY (simulation_id, generation) REFERENCES generation_stats(simulation_id, generation) ON DELETE CASCADE,
     FOREIGN KEY (trait_id) REFERENCES traits(trait_id) ON DELETE CASCADE,
@@ -236,6 +239,7 @@ generation_stats (1) ──< (many) generation_trait_stats
 - `idx_creatures_birth_generation` - Query creatures by simulation and birth generation (time-series queries)
 - `idx_creatures_parents` - Query creatures by parent relationships (lineage queries)
 - `idx_creatures_breeding_eligibility` - Query eligible breeders (composite index for filtering)
+- `idx_creatures_inbreeding` - Query creatures by inbreeding coefficient (for analysis and breeding selection)
 
 ### 5.5 Creature Genotypes Indexes
 - `idx_creature_genotypes_trait` - Query creature genotypes by trait
@@ -317,6 +321,13 @@ WITH RECURSIVE ancestors AS (
     INNER JOIN ancestors a ON c.creature_id = a.parent1_id OR c.creature_id = a.parent2_id
 )
 SELECT * FROM ancestors;
+
+-- Average inbreeding coefficient by birth generation
+SELECT birth_generation, AVG(inbreeding_coefficient) as avg_inbreeding
+FROM creatures
+WHERE simulation_id = ?
+GROUP BY birth_generation
+ORDER BY birth_generation;
 ```
 
 ### 7.3 Trait Analysis Queries
@@ -327,8 +338,14 @@ FROM generation_genotype_frequencies
 WHERE simulation_id = ? AND generation = ? AND trait_id = ?
 ORDER BY frequency DESC;
 
--- Allele frequencies and heterozygosity over time
-SELECT generation, allele_frequencies, heterozygosity
+-- Allele frequencies, heterozygosity, and genotype diversity over time
+SELECT generation, allele_frequencies, heterozygosity, genotype_diversity
+FROM generation_trait_stats
+WHERE simulation_id = ? AND trait_id = ?
+ORDER BY generation;
+
+-- Genotype diversity trends (number of distinct genotypes over time)
+SELECT generation, genotype_diversity
 FROM generation_trait_stats
 WHERE simulation_id = ? AND trait_id = ?
 ORDER BY generation;
@@ -349,9 +366,10 @@ ORDER BY generation;
 - ON DELETE SET NULL for parent references (preserves lineage even if parent deleted)
 
 ### 8.3 Performance Optimization
-- Indexes on common query patterns (generation, trait_id, simulation_id)
+- Indexes on common query patterns (generation, trait_id, simulation_id, inbreeding_coefficient)
 - Composite indexes for multi-column filters
 - Normalized structure enables efficient aggregations
+- Genotype diversity pre-calculated (avoids expensive COUNT DISTINCT queries)
 
 ### 8.4 Data Integrity
 - CHECK constraints validate data ranges

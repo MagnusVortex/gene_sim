@@ -162,13 +162,43 @@ CREATE INDEX idx_simulations_created ON simulations(created_at);
 
 ```python
 class Simulation:
-    def __init__(self, config_path: str, db_path: str = None):
+    @classmethod
+    def from_config(cls, config_path: str, db_path: str | None = None) -> Simulation:
+        """
+        Create a Simulation instance from a configuration file (convenience factory method).
+        
+        Args:
+            config_path: Path to YAML/JSON configuration file
+            db_path: Optional path for SQLite database. If None, database is created
+                    in the same directory as config_path with name 
+                    'simulation_YYYYMMDD_HHMMSS.db' (e.g., 'simulation_20251108_143022.db')
+        
+        Returns:
+            Initialized Simulation instance
+        
+        Raises:
+            FileNotFoundError: If config_path doesn't exist
+            ConfigurationError: If configuration is invalid
+        
+        Example:
+            >>> sim = Simulation.from_config('config.yaml')
+            >>> # Database will be: <config_dir>/simulation_20251108_143022.db
+        """
+        pass
+    
+    def __init__(self, config_path: str, db_path: str | None = None):
         """
         Initialize simulation from configuration file.
         
         Args:
             config_path: Path to YAML/JSON configuration file
-            db_path: Optional path for SQLite database (default: auto-generated)
+            db_path: Optional path for SQLite database. If None, database is created
+                    in the same directory as config_path with name 
+                    'simulation_YYYYMMDD_HHMMSS.db' (e.g., 'simulation_20251108_143022.db')
+        
+        Note:
+            Prefer using Simulation.from_config() as it's more convenient.
+            This constructor is available for direct instantiation if needed.
         """
         pass
     
@@ -178,6 +208,13 @@ class Simulation:
         
         Returns:
             SimulationResults object with metadata, database path, summary statistics
+        
+        Raises:
+            SimulationError: If simulation fails during execution
+        
+        Note:
+            The database persists after simulation completion and can be queried
+            directly using the database_path from SimulationResults.
         """
         pass
     
@@ -203,6 +240,15 @@ class Simulation:
         """
         pass
 ```
+
+**Database Path Behavior:**
+- **Default:** If `db_path` is `None`, the database is created in the same directory as the configuration file
+- **Naming:** Auto-generated databases use format `simulation_YYYYMMDD_HHMMSS.db` (e.g., `simulation_20251108_143022.db`)
+- **Timestamp:** Generated when simulation is initialized (not when run)
+- **Persistence:** Database persists after simulation completion for post-analysis
+- **Custom Path:** Users can specify any path for `db_path` to override default behavior
+
+**See:** [API Interface](api-interface.md) for detailed usage examples and patterns.
 
 ---
 
@@ -245,7 +291,10 @@ class SimulationResults:
     duration_seconds: float        # Execution time (end_time - start_time)
 ```
 
-**Note:** The `SimulationResults` object is derived from the `simulations` table record. The `config` field is parsed from the stored TEXT field for convenience.
+**Note:** 
+- The `SimulationResults` object is derived from the `simulations` table record. The `config` field is parsed from the stored TEXT field for convenience.
+- The `database_path` is always provided and points to a persistent SQLite database that can be queried after simulation completion.
+- Database persists on disk - it does not disappear when the program ends.
 
 ---
 

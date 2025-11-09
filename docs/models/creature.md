@@ -22,6 +22,7 @@ A **Creature** represents an individual organism in the simulation with a diploi
 | `sex` | Enum | Biological sex: 'male', 'female', or NULL (if sex not modeled) |
 | `parent1_id` | Integer | Foreign key to first parent (NULL for founders) |
 | `parent2_id` | Integer | Foreign key to second parent (NULL for founders) |
+| `inbreeding_coefficient` | Real | Inbreeding coefficient (F) for this creature, calculated from pedigree (0.0 to 1.0) |
 | `litters_remaining` | Integer | Number of litters remaining for this creature (starts at max value from simulation config, decrements per litter) |
 | `lifespan` | Integer | Individual lifespan for this creature (sampled from lifespan range in simulation config at birth) |
 | `is_alive` | Boolean | Whether creature is alive in current generation (for mortality modeling) |
@@ -30,6 +31,7 @@ A **Creature** represents an individual organism in the simulation with a diploi
 - Creatures persist across generations (they don't die automatically each generation)
 - `birth_generation`: Fixed timestamp of when creature was born (stored in memory during simulation, persisted to database when creature is no longer relevant)
 - `lifespan`: Individual lifespan sampled from config range at creation (fixed, never changes)
+- `inbreeding_coefficient`: Calculated when creature is created using Wright's formula: `F_offspring = (1/2) × (1 + F_parent1) × (1 + F_parent2) × r_parents`. Founders have F = 0.0. Stored as REAL value between 0.0 and 1.0.
 - Age calculation: `age = current_generation - birth_generation` (calculated on-demand, not stored)
 - Creatures age out when `age >= lifespan` (where `age = current_generation - birth_generation`)
 - Creatures have diploid genomes (two alleles per gene)
@@ -93,10 +95,37 @@ Each creature (except founders) has exactly two parents:
 
 ### 4.2 Inbreeding Coefficient
 
-Can be calculated from pedigree:
-- Count shared ancestors between parent1 and parent2
-- Calculate probability of identical-by-descent alleles
-- Used by inbreeding avoidance breeders
+The inbreeding coefficient (F) is calculated when a creature is created using Wright's formula:
+- **Founders:** F = 0.0 (no inbreeding)
+- **Offspring:** F = (1/2) × (1 + F_parent1) × (1 + F_parent2) × r_parents
+  - Where `r_parents` is the coefficient of relationship between the parents
+  - Parent inbreeding coefficients compound multiplicatively with the relationship coefficient
+- Stored in `inbreeding_coefficient` field (REAL, 0.0 to 1.0)
+- Used by inbreeding avoidance breeders to select mating pairs
+- Can be queried for analysis of inbreeding trends over generations
+
+#### 4.2.1 Relationship Coefficient Calculation
+
+The coefficient of relationship (`r_parents`) measures the probability that two individuals share identical alleles by descent from common ancestors. It is calculated by traversing the pedigree to find common ancestors.
+
+**Calculation Method:**
+1. **Find common ancestors:** Traverse both parent pedigrees to identify shared ancestors
+2. **Calculate paths:** For each common ancestor, find all paths connecting the two parents through that ancestor
+3. **Sum contributions:** For each path, calculate `(1/2)^(n1 + n2 + 1)` where:
+   - `n1` = number of generations from parent1 to common ancestor
+   - `n2` = number of generations from parent2 to common ancestor
+4. **Account for inbreeding:** Multiply each path contribution by `(1 + F_common_ancestor)` if the common ancestor is inbred
+5. **Sum all paths:** `r_parents` = sum of all path contributions
+
+**Common Relationship Values (for reference):**
+- **Unrelated:** r = 0.0 (no common ancestors)
+- **Parent-Offspring:** r = 0.5 (direct relationship)
+- **Full Siblings:** r = 0.5 (share both parents)
+- **Half Siblings:** r = 0.25 (share one parent)
+- **First Cousins:** r = 0.125 (share grandparents)
+- **Uncle-Niece/Aunt-Nephew:** r = 0.25 (one generation difference)
+
+**Implementation Note:** For Phase 1, a simplified implementation may use a lookup table for common relationships or calculate r by traversing the pedigree up to a limited depth (e.g., 5-10 generations). Full pedigree traversal can be implemented if needed for complex pedigrees.
 
 ---
 
@@ -198,6 +227,7 @@ CREATE TABLE creatures (
     sex TEXT CHECK(sex IN ('male', 'female')) NULL,
     parent1_id INTEGER NULL,
     parent2_id INTEGER NULL,
+    inbreeding_coefficient REAL NOT NULL CHECK(inbreeding_coefficient >= 0.0 AND inbreeding_coefficient <= 1.0) DEFAULT 0.0,
     litters_remaining INTEGER NOT NULL CHECK(litters_remaining >= 0),
     lifespan INTEGER NOT NULL CHECK(lifespan > 0),
     is_alive BOOLEAN DEFAULT 1,
@@ -212,6 +242,7 @@ CREATE TABLE creatures (
 CREATE INDEX idx_creatures_birth_generation ON creatures(simulation_id, birth_generation);
 CREATE INDEX idx_creatures_parents ON creatures(parent1_id, parent2_id);
 CREATE INDEX idx_creatures_breeding_eligibility ON creatures(simulation_id, sex, birth_generation, litters_remaining, is_alive);
+CREATE INDEX idx_creatures_inbreeding ON creatures(simulation_id, inbreeding_coefficient);
 ```
 
 ### 7.2 Genotypes Table (Creature Genotypes)
