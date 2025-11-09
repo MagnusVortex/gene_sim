@@ -33,8 +33,11 @@ A **Simulation** represents a complete experimental run with configuration, exec
 3. **Initialize database** (create schema, tables, indexes)
 4. **Initialize pRNG** with seed from configuration (store seed in database)
 5. **Create initial population** (founders with genotypes based on initial frequencies)
-6. **Initialize breeders** (create breeder instances according to configuration)
-7. **Persist initial state** (founders, initial statistics, simulation metadata)
+6. **Persist founders immediately** (all creatures must be persisted immediately upon creation - see [Creature Model](creature.md) section 8.3)
+7. **Initialize breeders** (create breeder instances according to configuration)
+8. **Persist initial state** (initial statistics, simulation metadata)
+
+**Key Principle:** All creatures (founders and offspring) are persisted to the database immediately upon creation. This ensures all creatures have IDs from the start and complete historical records.
 
 ### 3.2 Execution Phase
 
@@ -75,6 +78,7 @@ creature_archetype:                # Creature lifecycle parameters
     min: int
     max: int
   remove_ineligible_immediately: bool
+  offspring_removal_rate: float   # Probability (0.0-1.0) that offspring are removed (sold/given away)
 target_phenotypes: []              # For phenotype-selecting breeders
 breeders:                          # Breeder distribution
   random: int

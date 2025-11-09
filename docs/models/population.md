@@ -29,13 +29,26 @@ A **Population** represents the working pool of creatures currently in the simul
 
 The population maintains the in-memory working pool of creatures. Removal behavior is controlled by simulation configuration:
 
-- **Inclusion:** Creatures are added when:
-  - Initial population is created (founders)
-  - Offspring are born from reproduction
+- **Inclusion:** Creatures are added to the working pool when:
+  - Initial population is created (founders) - **all founders are persisted immediately** and have IDs before being added
+  - Offspring are born from reproduction - **all offspring are persisted immediately** when created, but only remaining offspring (not removed) are added to the pool
   
-- **Removal:** Behavior depends on `remove_ineligible_immediately` configuration (see [Creature Model](creature.md) section 8.3 for persistence details):
-  - **If `true`:** Creatures are removed immediately after they can no longer reproduce (breeding age limit exceeded or litters_remaining <= 0)
-  - **If `false`:** Creatures persist in the working pool until they age out
+- **Persistence:** **ALL creatures are persisted to the database immediately upon creation:**
+  - Founders: Persisted immediately after simulation initialization
+  - Offspring: Persisted immediately when created (both removed and remaining)
+  - This ensures all creatures have IDs from the start and complete historical records
+  
+- **Offspring Removal:** Some offspring may be removed before entering the population (sold/given away):
+  - Controlled by `offspring_removal_rate` configuration (0.0-1.0 probability)
+  - **Removed offspring are still persisted to database immediately** for historical tracking
+  - Removed offspring do not enter the breeding pool and do not contribute to population growth
+  - This mechanism helps control population growth
+  
+- **Removal from Working Pool:** Behavior depends on `remove_ineligible_immediately` configuration:
+  - **If `true`:** Creatures are removed from working pool immediately after they can no longer reproduce (breeding age limit exceeded or litters_remaining <= 0)
+  - **If `false`:** Creatures remain in working pool until they age out
+  - **Note:** Since all creatures are already persisted, removal from working pool does NOT involve database writes
+  
 - **Aging-out list:** Population maintains a pre-computed list/dictionary of creatures who age out in each generation. When a creature is created, its aging-out generation is calculated as `birth_generation + lifespan`, and the creature is added to the list for that generation. This allows efficient retrieval without iterating through all creatures.
 
 - **Updates:** Creature attributes (e.g., `litters_remaining`) are updated in-memory during simulation
@@ -71,11 +84,13 @@ class Population:
         """Returns list of eligible female creatures for breeding."""
         pass
     
-    def add_creatures(self, creatures: List[Creature]) -> None:
+    def add_creatures(self, creatures: List[Creature], current_generation: int) -> None:
         """
-        Adds new creatures (e.g., offspring) to the working pool.
+        Adds new creatures (e.g., remaining offspring after removal) to the working pool.
         Also updates the aging-out list: calculates aging-out generation for each creature
         (birth_generation + lifespan) and adds to the list for that generation.
+        
+        Note: Creatures added here have already been persisted to the database and have IDs.
         """
         pass
     

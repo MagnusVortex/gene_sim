@@ -29,12 +29,19 @@ A **Generation** represents a single iteration in the simulation timeline. It tr
 1. **Filter eligible creatures** (see [Creature Model](creature.md) section 6 for eligibility criteria)
 2. **Select mating pairs** (via configured breeders - see [Breeder Model](breeder.md))
 3. **Reproduce** (gamete formation, offspring creation - see [Creature Model](creature.md) section 5)
-4. **Add offspring** to population (see [Population Model](population.md))
-5. **Get aged-out creatures** for current generation (see [Population Model](population.md))
-6. **Remove aged-out creatures** (see [Creature Model](creature.md) section 8.3 for persistence)
-7. **Calculate statistics** (genotype frequencies, diversity metrics)
-8. **Persist generation statistics** to database
-9. **Advance generation** (increment generation counter)
+4. **Persist all offspring immediately** (all creatures are persisted upon creation):
+   - **All offspring are persisted to database immediately** when created, before any further processing
+   - This ensures all creatures have IDs from the start
+5. **Remove some offspring** (based on `offspring_removal_rate` configuration):
+   - Randomly select offspring to remove (sold/given away)
+   - Removed offspring are already persisted (from step 4) and remain in historical records
+   - Removed offspring do not enter the breeding pool
+6. **Add remaining offspring** to population (they already have IDs from step 4) (see [Population Model](population.md))
+7. **Get aged-out creatures** for current generation (see [Population Model](population.md))
+8. **Remove aged-out creatures** from working pool (they are already persisted - see [Creature Model](creature.md) section 8.3)
+9. **Calculate statistics** (genotype frequencies, diversity metrics)
+10. **Persist generation statistics** to database
+11. **Advance generation** (increment generation counter)
 
 ### 3.2 Generation Numbering
 
@@ -55,8 +62,9 @@ Generation statistics are calculated before persistence:
 - Number of eligible males/females
 - Age distribution
 - Sex ratio
-- Number of births (offspring created this generation)
+- Number of births (total offspring created this generation, including removed ones)
 - Number of deaths (creatures aged out this generation)
+- Number of removed offspring (sold/given away, persisted but not added to breeding pool)
 
 **Genetic:**
 - Genotype frequencies per trait (from working pool)
@@ -65,18 +73,22 @@ Generation statistics are calculated before persistence:
 - Genotype diversity per trait (number of distinct genotypes present)
 - Phenotype distributions (can be calculated post-simulation from persisted data)
 
-**Note:** Statistics are calculated from the in-memory working pool before creatures are persisted. This ensures accurate counts before any removals occur.
+**Note:** Statistics are calculated from the in-memory working pool. All creatures are already persisted immediately upon creation (before statistics calculation), so persistence does not affect statistics. The `births` statistic includes all offspring created (both removed and remaining), while population size reflects only creatures in the breeding pool.
 
 ---
 
 ## 5. Database Persistence
 
+**CRITICAL: All creatures are persisted immediately upon creation** (see [Creature Model](creature.md) section 8.3).
+
 Generation coordinates persistence of:
+- **Creatures:** All offspring are persisted immediately when created (before removal logic or adding to population)
 - **Generation Statistics:** Aggregated metrics for this generation (see section 4):
   - Demographic stats → `generation_stats` table
   - Genotype frequencies → `generation_genotype_frequencies` table (one row per genotype)
   - Allele frequencies and heterozygosity → `generation_trait_stats` table (one row per trait)
-- **Creatures:** Aged-out creatures are persisted by Population before removal (see [Creature Model](creature.md) section 8.3 for persistence details)
+
+**Note:** Aged-out creatures are already persisted (they were persisted when created), so removal from working pool does not involve database writes.
 
 ---
 

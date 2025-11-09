@@ -28,8 +28,10 @@ A **Creature** represents an individual organism in the simulation with a diploi
 | `is_alive` | Boolean | Whether creature is alive in current generation (for mortality modeling) |
 
 **Design Notes:**
+- **CRITICAL: All creatures are persisted to the database immediately upon creation** (see section 8.3)
 - Creatures persist across generations (they don't die automatically each generation)
-- `birth_generation`: Fixed timestamp of when creature was born (stored in memory during simulation, persisted to database when creature is no longer relevant)
+- `creature_id`: Assigned immediately when creature is persisted (all creatures are persisted upon creation)
+- `birth_generation`: Fixed timestamp of when creature was born (persisted immediately when creature is created)
 - `lifespan`: Individual lifespan sampled from config range at creation (fixed, never changes)
 - `inbreeding_coefficient`: Calculated when creature is created using Wright's formula: `F_offspring = (1/2) × (1 + F_parent1) × (1 + F_parent2) × r_parents`. Founders have F = 0.0. Stored as REAL value between 0.0 and 1.0.
 - Age calculation: `age = current_generation - birth_generation` (calculated on-demand, not stored)
@@ -41,7 +43,7 @@ A **Creature** represents an individual organism in the simulation with a diploi
 - Breeding eligibility: Age limit and litters_remaining limit defined at simulation level
 
 **Key Distinction: `birth_generation` vs `current_generation`**
-- **`birth_generation`**: Fixed generation when creature was born. Stored in memory during simulation, persisted to database when creature is written. Used to calculate age: `age = current_generation - birth_generation`.
+- **`birth_generation`**: Fixed generation when creature was born. Persisted immediately when creature is created (all creatures are persisted immediately). Used to calculate age: `age = current_generation - birth_generation`.
 - **`current_generation`**: Runtime simulation state (in-memory only, not persisted). Increments each breeding cycle.
 
 ---
@@ -341,16 +343,42 @@ cursor.executemany(
 
 ### 8.3 Persistence Strategy
 
-Creatures are persisted to the database when removed from the working pool. Persistence timing is controlled by `remove_ineligible_immediately` simulation configuration:
+**CRITICAL: All creatures are persisted to the database immediately upon creation.**
 
-- **If `true`:** Creatures are persisted and removed immediately after they can no longer reproduce (breeding age limit exceeded or `litters_remaining <= 0`)
-- **If `false`:** Creatures persist in working pool until they age out (`age >= lifespan`), then are persisted and removed
+This is a fundamental design principle: every creature is written to the database the moment it is created, ensuring all creatures have IDs from the start. This simplifies parent ID tracking and ensures complete historical records.
+
+**Persistence Timeline:**
+
+1. **Founders (Generation 0):**
+   - Created during simulation initialization
+   - Persisted immediately after simulation record creation (before any breeding occurs)
+   - All founders have `creature_id` assigned before generation 1 begins
+
+2. **Offspring (Generation 1+):**
+   - Created during reproduction cycle
+   - **All offspring are persisted immediately** when created, before any further processing:
+     - **Removed offspring** (sold/given away): Persisted immediately but do not enter the breeding pool
+     - **Remaining offspring**: Persisted immediately before being added to the population
+   - All offspring have `creature_id` assigned before being used as parents in future generations
+
+**Working Pool Removal** (creatures removed from in-memory pool):
+- Since all creatures are already persisted, removal from the working pool does NOT involve database writes
+- Removal timing is controlled by `remove_ineligible_immediately` simulation configuration:
+  - **If `true`:** Creatures are removed from working pool immediately after they can no longer reproduce (breeding age limit exceeded or `litters_remaining <= 0`)
+  - **If `false`:** Creatures remain in working pool until they age out (`age >= lifespan`), then are removed
+- Aged-out creatures are removed from the working pool (they are already in the database)
 
 **Persistence Process** (handled by Population):
-1. Calculate generation statistics (genotype frequencies, etc.) from working pool
-2. Write statistics to `generation_stats` table
-3. Write creatures to `creatures` and `creature_genotypes` tables (batch inserts)
-4. Remove creatures from working memory
+1. Creatures are inserted into `creatures` table with auto-increment `creature_id`
+2. Genotypes are inserted into `creature_genotypes` table (one row per trait)
+3. `creature_id` is assigned to the creature object immediately
+4. Database transaction is committed
+
+**Key Benefits:**
+- All creatures have IDs from creation, simplifying parent ID tracking
+- Complete historical records (even removed offspring are in database)
+- No risk of losing creature data if simulation crashes
+- Parent IDs can always be set correctly since parents are already persisted
 
 **Note:** See [Population Model](population.md) for working pool management details.
 

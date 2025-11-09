@@ -1,0 +1,145 @@
+# Simulation Configuration
+# Defines all parameters for a genealogical simulation run
+
+# Random seed for reproducibility
+# Same seed + same config = identical results
+seed: 42
+
+# Number of generations to simulate
+generations: 100
+
+# Initial population size
+initial_population_size: 1000
+
+# Initial population sex ratio (males:females)
+# Values are normalized to sum to 1.0
+initial_sex_ratio:
+  male: 0.5
+  female: 0.5
+
+# Creature archetype configuration
+creature_archetype:
+  # Breeding age limits (separate for males and females)
+  max_breeding_age:
+    male: 10
+    female: 8
+  
+  # Maximum litters for females (litters_remaining starts at this value)
+  max_litters: 5
+  
+  # Lifespan range (separate from breeding age limits)
+  # Each creature gets a random lifespan sampled from this range at birth
+  # Creatures age out when age >= their individual lifespan
+  lifespan:
+    min: 12
+    max: 18
+  
+  # Whether to remove creatures immediately when they can't reproduce
+  # If true: remove when breeding age exceeded or litters_remaining <= 0
+  # If false: persist until they age out (lifespan)
+  remove_ineligible_immediately: false
+  
+  # Probability (0.0-1.0) that offspring are removed from the population (sold/given away)
+  # Removed offspring are still persisted to the database for historical tracking
+  # This helps control population growth by reducing the number of creatures that enter the breeding pool
+  # Example: 0.5 means 50% of offspring are removed, 0.0 means no removal (default)
+  offspring_removal_rate: 0.0
+
+# Target phenotypes for phenotype-selecting breeders
+# Used by both kennel_club and unrestricted_phenotype breeders
+target_phenotypes:
+  - trait_id: 0
+    phenotype: "Black"
+  - trait_id: 1
+    phenotype: "Large"
+
+# Breeder configuration
+breeders:
+  # Number of breeders of each type (actual counts, not percentages)
+  random: 50
+  inbreeding_avoidance: 30
+  kennel_club: 15
+  unrestricted_phenotype: 5
+  
+  # Kennel club breeder configuration (if using kennel_club breeder)
+  kennel_club_config:
+    # Guidelines/rules (target_phenotypes come from top-level config)
+    max_inbreeding_coefficient: 0.125  # Avoid close relatives
+    required_phenotype_ranges:
+      - trait_id: 2
+        min: "60.0"
+        max: "80.0"
+
+# Trait definitions
+traits:
+  - trait_id: 0
+    name: "Coat Color"
+    trait_type: SIMPLE_MENDELIAN
+    genotypes:
+      - genotype: "BB"
+        phenotype: "Black"
+        initial_freq: 0.36
+      - genotype: "Bb"
+        phenotype: "Black"
+        initial_freq: 0.48
+      - genotype: "bb"
+        phenotype: "Brown"
+        initial_freq: 0.16
+  
+  - trait_id: 1
+    name: "Body Size"
+    trait_type: SIMPLE_MENDELIAN
+    genotypes:
+      - genotype: "LL"
+        phenotype: "Large"
+        initial_freq: 0.25
+      - genotype: "Ll"
+        phenotype: "Large"
+        initial_freq: 0.50
+      - genotype: "ll"
+        phenotype: "Small"
+        initial_freq: 0.25
+  
+  - trait_id: 2
+    name: "Height"
+    trait_type: POLYGENIC
+    genotypes:
+      - genotype: "H1H1_H2H2_H3H3"
+        phenotype: "80.0"
+        initial_freq: 0.027
+      - genotype: "H1H1_H2H2_H3h3"
+        phenotype: "75.0"
+        initial_freq: 0.054
+      - genotype: "H1H1_H2H2_h3h3"
+        phenotype: "70.0"
+        initial_freq: 0.027
+      # ... additional genotype combinations
+      - genotype: "h1h1_h2h2_h3h3"
+        phenotype: "50.0"
+        initial_freq: 0.027
+  
+  - trait_id: 3
+    name: "Color Blindness"
+    trait_type: SEX_LINKED
+    genotypes:
+      - genotype: "NN"
+        phenotype: "Normal vision"
+        sex: "female"
+        initial_freq: 0.40
+      - genotype: "Nc"
+        phenotype: "Normal vision (carrier)"
+        sex: "female"
+        initial_freq: 0.10
+      - genotype: "cc"
+        phenotype: "Colorblind"
+        sex: "female"
+        initial_freq: 0.0025
+      - genotype: "N"
+        phenotype: "Normal vision"
+        sex: "male"
+        initial_freq: 0.47
+      - genotype: "c"
+        phenotype: "Colorblind"
+        sex: "male"
+        initial_freq: 0.0075
+
