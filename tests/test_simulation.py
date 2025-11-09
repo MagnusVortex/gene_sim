@@ -12,7 +12,7 @@ def simple_config_file():
     """Create a simple config file for testing."""
     config = {
         'seed': 42,
-        'cycles': 5,
+        'years': 0.25,  # ~3 cycles with 28 day cycle
         'initial_population_size': 20,
         'initial_sex_ratio': {'male': 0.5, 'female': 0.5},
         'creature_archetype': {
@@ -29,7 +29,7 @@ def simple_config_file():
             'random': 5,
             'inbreeding_avoidance': 0,
             'kennel_club': 0,
-            'unrestricted_phenotype': 0
+            'mill': 0
         },
         'traits': [
             {
@@ -66,7 +66,8 @@ def test_simulation_from_config(simple_config_file):
     """Test creating simulation from config."""
     sim = Simulation.from_config(simple_config_file)
     assert sim.config.seed == 42
-    assert sim.config.cycles == 5
+    assert sim.config.years == 0.25
+    assert sim.config.cycles > 0  # Should be calculated
 
 
 def test_simulation_run(simple_config_file):
@@ -75,7 +76,8 @@ def test_simulation_run(simple_config_file):
     results = sim.run()
     
     assert results.status == 'completed'
-    assert results.generations_completed == 5
+    # 0.25 years * 365.25 / 28 ≈ 3 cycles
+    assert results.generations_completed == 3
     assert results.simulation_id is not None
     assert results.database_path is not None
     assert results.final_population_size >= 0
@@ -115,7 +117,7 @@ def test_simulation_database_persistence(simple_config_file):
     # Check generation stats were persisted
     cursor.execute("SELECT COUNT(*) FROM generation_stats WHERE simulation_id = ?", (results.simulation_id,))
     gen_count = cursor.fetchone()[0]
-    assert gen_count == 5  # 5 generations
+    assert gen_count == 3  # 0.25 years ≈ 3 cycles
     
     conn.close()
 

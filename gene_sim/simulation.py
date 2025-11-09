@@ -16,7 +16,7 @@ from .models.population import Population
 from .models.generation import Cycle
 from .models.breeder import (
     RandomBreeder, InbreedingAvoidanceBreeder,
-    KennelClubBreeder, UnrestrictedPhenotypeBreeder
+    KennelClubBreeder, MillBreeder
 )
 from .models.creature import Creature
 
@@ -160,7 +160,12 @@ class Simulation:
         
         # Random breeders
         for _ in range(self.config.breeders.random):
-            breeder = RandomBreeder()
+            breeder = RandomBreeder(
+                undesirable_phenotypes=self.config.undesirable_phenotypes,
+                undesirable_genotypes=self.config.undesirable_genotypes,
+                avoid_undesirable_phenotypes=self.config.breeders.avoid_undesirable_phenotypes,
+                avoid_undesirable_genotypes=self.config.breeders.avoid_undesirable_genotypes
+            )
             breeders.append(breeder)
             # Persist breeder to database
             cursor.execute("""
@@ -172,7 +177,13 @@ class Simulation:
         
         # Inbreeding avoidance breeders
         for _ in range(self.config.breeders.inbreeding_avoidance):
-            breeder = InbreedingAvoidanceBreeder(max_inbreeding_coefficient=0.25)
+            breeder = InbreedingAvoidanceBreeder(
+                max_inbreeding_coefficient=0.25,
+                undesirable_phenotypes=self.config.undesirable_phenotypes,
+                undesirable_genotypes=self.config.undesirable_genotypes,
+                avoid_undesirable_phenotypes=self.config.breeders.avoid_undesirable_phenotypes,
+                avoid_undesirable_genotypes=self.config.breeders.avoid_undesirable_genotypes
+            )
             breeders.append(breeder)
             cursor.execute("""
                 INSERT INTO breeders (simulation_id, breeder_index, breeder_type)
@@ -187,7 +198,11 @@ class Simulation:
             breeder = KennelClubBreeder(
                 target_phenotypes=self.config.target_phenotypes,
                 max_inbreeding_coefficient=kennel_config.get('max_inbreeding_coefficient'),
-                required_phenotype_ranges=kennel_config.get('required_phenotype_ranges', [])
+                required_phenotype_ranges=kennel_config.get('required_phenotype_ranges', []),
+                undesirable_phenotypes=self.config.undesirable_phenotypes,
+                undesirable_genotypes=self.config.undesirable_genotypes,
+                avoid_undesirable_phenotypes=self.config.breeders.avoid_undesirable_phenotypes,
+                avoid_undesirable_genotypes=self.config.breeders.avoid_undesirable_genotypes
             )
             breeders.append(breeder)
             cursor.execute("""
@@ -197,15 +212,19 @@ class Simulation:
             breeder.breeder_id = cursor.lastrowid
             breeder_index += 1
         
-        # Unrestricted phenotype breeders
-        for _ in range(self.config.breeders.unrestricted_phenotype):
-            breeder = UnrestrictedPhenotypeBreeder(
-                target_phenotypes=self.config.target_phenotypes
+        # Mill breeders
+        for _ in range(self.config.breeders.mill):
+            breeder = MillBreeder(
+                target_phenotypes=self.config.target_phenotypes,
+                undesirable_phenotypes=self.config.undesirable_phenotypes,
+                undesirable_genotypes=self.config.undesirable_genotypes,
+                avoid_undesirable_phenotypes=self.config.breeders.avoid_undesirable_phenotypes,
+                avoid_undesirable_genotypes=self.config.breeders.avoid_undesirable_genotypes
             )
             breeders.append(breeder)
             cursor.execute("""
                 INSERT INTO breeders (simulation_id, breeder_index, breeder_type)
-                VALUES (?, ?, 'unrestricted_phenotype')
+                VALUES (?, ?, 'mill')
             """, (self.simulation_id, breeder_index))
             breeder.breeder_id = cursor.lastrowid
             breeder_index += 1
@@ -354,10 +373,18 @@ class Simulation:
                 
                 # Update simulation progress
                 self._update_simulation_progress(cycle_num + 1, len(self.population.creatures))
+                
+                # Monitor mode output
+                if self.config.mode == 'monitor':
+                    self._print_monitor_output(cycle_num, stats)
             
             # Finalize simulation
             end_time = datetime.now()
             self._finalize_simulation(end_time, len(self.population.creatures))
+            
+            # Print final newline in monitor mode for clean output
+            if self.config.mode == 'monitor':
+                print()  # Newline after final cycle output
             
             # Build results
             duration = (end_time - start_time).total_seconds()
@@ -404,6 +431,52 @@ class Simulation:
             WHERE simulation_id = ?
         """, (generations_completed, datetime.now().isoformat(), self.simulation_id))
         self.db_conn.commit()
+    
+    def _calculate_desired_trait_penetration(self) -> float:
+        """Calculate percentage of population with desired (target) phenotypes."""
+        if not self.config.target_phenotypes or not self.population.creatures:
+            return 0.0
+        
+        matching_count = 0
+        for creature in self.population.creatures:
+            matches = True
+            for target in self.config.target_phenotypes:
+                trait_id = target['trait_id']
+                target_phenotype = target['phenotype']
+                
+                if trait_id >= len(creature.genome) or creature.genome[trait_id] is None:
+                    matches = False
+                    break
+                
+                # Find trait to get phenotype mapping
+                trait = next((t for t in self.traits if t.trait_id == trait_id), None)
+                if trait is None:
+                    matches = False
+                    break
+                
+                actual_phenotype = trait.get_phenotype(creature.genome[trait_id], creature.sex)
+                if actual_phenotype != target_phenotype:
+                    matches = False
+                    break
+            
+            if matches:
+                matching_count += 1
+        
+        return (matching_count / len(self.population.creatures)) * 100.0 if self.population.creatures else 0.0
+    
+    def _print_monitor_output(self, cycle_num: int, stats: 'CycleStats') -> None:
+        """Print monitor mode output for current cycle."""
+        penetration = self._calculate_desired_trait_penetration()
+        
+        # Print progress line with carriage return to overwrite (for live updates)
+        # Use \r to overwrite the same line, or \n for new lines
+        print(f"\rCycle {cycle_num:5d}/{self.config.cycles-1:5d} | "
+              f"Population: {stats.population_size:5d} | "
+              f"Desired Trait: {penetration:5.1f}% | "
+              f"Births: {stats.births:4d} | "
+              f"Deaths: {stats.deaths:4d} | "
+              f"Eligible M: {stats.eligible_males:4d} | "
+              f"Eligible F: {stats.eligible_females:4d}", end='', flush=True)
     
     def _finalize_simulation(self, end_time: datetime, final_population_size: int) -> None:
         """Finalize simulation record."""

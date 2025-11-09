@@ -101,34 +101,54 @@ class Cycle:
                 offspring = []
             else:
                 # Distribute pairs to breeders
-                pairs_per_breeder = num_pairs // len(breeders) if breeders else 0
-                remaining_pairs = num_pairs % len(breeders) if breeders else 0
-                
                 all_pairs = []
-                for i, breeder in enumerate(breeders):
-                    num_for_breeder = pairs_per_breeder + (1 if i < remaining_pairs else 0)
-                    if num_for_breeder > 0:
-                        # Pass traits to breeders that need them
-                        if hasattr(breeder, 'select_pairs'):
-                            # Check if breeder needs traits parameter
-                            import inspect
-                            sig = inspect.signature(breeder.select_pairs)
-                            if 'traits' in sig.parameters:
-                                pairs = breeder.select_pairs(
-                                    available_males, eligible_females, num_for_breeder, rng, traits=traits
-                                )
-                            else:
-                                pairs = breeder.select_pairs(
-                                    available_males, eligible_females, num_for_breeder, rng
-                                )
-                            all_pairs.extend(pairs)
+                if breeders and len(breeders) > 0:
+                    pairs_per_breeder = num_pairs // len(breeders)
+                    remaining_pairs = num_pairs % len(breeders)
+                    
+                    for i, breeder in enumerate(breeders):
+                        num_for_breeder = pairs_per_breeder + (1 if i < remaining_pairs else 0)
+                        if num_for_breeder > 0:
+                            # Pass traits to breeders that need them
+                            if hasattr(breeder, 'select_pairs'):
+                                # Check if breeder needs traits parameter
+                                import inspect
+                                sig = inspect.signature(breeder.select_pairs)
+                                if 'traits' in sig.parameters:
+                                    pairs = breeder.select_pairs(
+                                        available_males, eligible_females, num_for_breeder, rng, traits=traits
+                                    )
+                                else:
+                                    pairs = breeder.select_pairs(
+                                        available_males, eligible_females, num_for_breeder, rng
+                                    )
+                                # Tag each pair with the breeder that selected it
+                                for pair in pairs:
+                                    breeder_id = breeder.breeder_id if breeder.breeder_id is not None else None
+                                    all_pairs.append((pair[0], pair[1], breeder_id))
+                else:
+                    # No breeders: create random pairs without breeder assignment
+                    # This should not happen in normal operation, but handle gracefully
+                    import random
+                    shuffled_males = available_males.copy()
+                    shuffled_females = eligible_females.copy()
+                    rng.shuffle(shuffled_males)
+                    rng.shuffle(shuffled_females)
+                    for i in range(min(num_pairs, len(shuffled_males), len(shuffled_females))):
+                        all_pairs.append((shuffled_males[i], shuffled_females[i], None))
                 
                 # 4. Create offspring at conception (current_cycle)
                 offspring = []
                 # Store parent references for later lookup when persisting removed offspring
                 parent_map = {}  # child -> (parent1, parent2)
                 
-                for male, female in all_pairs:
+                for pair_data in all_pairs:
+                    if len(pair_data) == 3:
+                        male, female, breeder_id = pair_data
+                    else:
+                        # Backward compatibility: if no breeder_id, use None
+                        male, female = pair_data
+                        breeder_id = None
                     # Mark male as mated this cycle
                     if male.creature_id is not None:
                         mated_males.add(male.creature_id)
@@ -145,7 +165,8 @@ class Cycle:
                         simulation_id=simulation_id,
                         traits=traits,
                         rng=rng,
-                        config=config
+                        config=config,
+                        produced_by_breeder_id=breeder_id
                     )
                     
                     # Store parent references

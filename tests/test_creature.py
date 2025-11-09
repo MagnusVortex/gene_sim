@@ -109,11 +109,14 @@ def test_creature_create_offspring(sample_traits):
     )
     config = SimulationConfig(
         seed=42,
-        cycles=10,
+        years=0.5,
+        cycles=13,  # Calculated from years (0.5 * 365.25 / 28 ≈ 13)
         initial_population_size=100,
         initial_sex_ratio={'male': 0.5, 'female': 0.5},
         creature_archetype=archetype,
         target_phenotypes=[],
+        undesirable_phenotypes=[],
+        undesirable_genotypes=[],
         breeders=None,
         traits=[],
         raw_config={}

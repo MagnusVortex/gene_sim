@@ -75,7 +75,7 @@ def create_schema(conn: sqlite3.Connection) -> None:
                 breeder_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 simulation_id INTEGER NOT NULL,
                 breeder_index INTEGER NOT NULL CHECK(breeder_index >= 0),
-                breeder_type TEXT NOT NULL CHECK(breeder_type IN ('random', 'inbreeding_avoidance', 'kennel_club', 'unrestricted_phenotype')),
+                breeder_type TEXT NOT NULL CHECK(breeder_type IN ('random', 'inbreeding_avoidance', 'kennel_club', 'mill')),
                 FOREIGN KEY (simulation_id) REFERENCES simulations(simulation_id) ON DELETE CASCADE,
                 UNIQUE(simulation_id, breeder_index)
             )
@@ -91,6 +91,7 @@ def create_schema(conn: sqlite3.Connection) -> None:
                 parent1_id INTEGER NULL,
                 parent2_id INTEGER NULL,
                 breeder_id INTEGER NULL,
+                produced_by_breeder_id INTEGER NULL,
                 inbreeding_coefficient REAL NOT NULL CHECK(inbreeding_coefficient >= 0.0 AND inbreeding_coefficient <= 1.0) DEFAULT 0.0,
                 lifespan INTEGER NOT NULL CHECK(lifespan > 0),
                 is_alive BOOLEAN DEFAULT 1,
@@ -104,6 +105,7 @@ def create_schema(conn: sqlite3.Connection) -> None:
                 FOREIGN KEY (parent1_id) REFERENCES creatures(creature_id) ON DELETE SET NULL,
                 FOREIGN KEY (parent2_id) REFERENCES creatures(creature_id) ON DELETE SET NULL,
                 FOREIGN KEY (breeder_id) REFERENCES breeders(breeder_id) ON DELETE SET NULL,
+                FOREIGN KEY (produced_by_breeder_id) REFERENCES breeders(breeder_id) ON DELETE SET NULL,
                 CHECK((birth_cycle = 0) = (parent1_id IS NULL)),
                 CHECK((birth_cycle = 0) = (parent2_id IS NULL))
             )

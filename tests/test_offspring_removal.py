@@ -13,7 +13,7 @@ def config_with_removal():
     """Create a config with offspring removal enabled."""
     config = {
         'seed': 42,
-        'cycles': 5,
+        'years': 0.25,  # ~3 cycles with 28 day cycle
         'initial_population_size': 50,
         'initial_sex_ratio': {'male': 0.5, 'female': 0.5},
         'creature_archetype': {
@@ -31,7 +31,7 @@ def config_with_removal():
             'random': 5,
             'inbreeding_avoidance': 0,
             'kennel_club': 0,
-            'unrestricted_phenotype': 0
+            'mill': 0
         },
         'traits': [
             {

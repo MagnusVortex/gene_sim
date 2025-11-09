@@ -1,6 +1,7 @@
 # Quick test simulation configuration
 seed: 12345
-cycles: 2000  # Number of cycles to run (one cycle = one menstrual cycle)
+years: 10  # Number of years to simulate (cycles will be calculated from this)
+mode: monitor  # Output mode: 'quiet', 'monitor', or 'debug'
 initial_population_size: 100
 
 initial_sex_ratio:
@@ -23,7 +24,26 @@ creature_archetype:
   nearing_end_cycles: 4
   remove_ineligible_immediately: false
 
-target_phenotypes: []
+target_phenotypes: 
+  - trait_id: 0
+    phenotype: "Brown"
+
+# Undesirable phenotypes and genotypes (breeders can be configured to avoid these)
+undesirable_phenotypes:
+  - trait_id: 1
+    phenotype: "Small"
+  # Example:
+  # - trait_id: 0
+  #   phenotype: "Brown"  # Avoid creatures with brown coat color
+
+undesirable_genotypes: 
+  - trait_id: 1
+    genotype: "Ll"
+  - trait_id: 1
+    genotype: "ll"
+  # Example:
+  # - trait_id: 0
+  #   genotype: "bb"  # Avoid creatures with bb genotype
 
 # Breeder configuration
 # Breeders own creatures and select mating pairs
@@ -35,8 +55,8 @@ target_phenotypes: []
 breeders:
   random: 0
   inbreeding_avoidance: 0
-  kennel_club: 20
-  unrestricted_phenotype: 20
+  kennel_club: 300
+  mill: 400
 
 traits:
   - trait_id: 0

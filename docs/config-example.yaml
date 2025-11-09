@@ -5,8 +5,11 @@
 # Same seed + same config = identical results
 seed: 42
 
-# Number of generations to simulate
-generations: 100
+# Output mode: 'quiet' (no output), 'monitor' (progress updates), or 'debug' (detailed debugging)
+mode: quiet
+
+# Number of years to simulate (cycles will be calculated from this)
+years: 10
 
 # Initial population size
 initial_population_size: 1000
@@ -40,12 +43,25 @@ creature_archetype:
   remove_ineligible_immediately: false
 
 # Target phenotypes for phenotype-selecting breeders
-# Used by both kennel_club and unrestricted_phenotype breeders
+# Used by both kennel_club and mill breeders
 target_phenotypes:
   - trait_id: 0
     phenotype: "Black"
   - trait_id: 1
     phenotype: "Large"
+
+# Undesirable phenotypes and genotypes (breeders can be configured to avoid these)
+# When avoid_undesirable_phenotypes or avoid_undesirable_genotypes is enabled,
+# breeders will not select parents with these attributes
+undesirable_phenotypes:
+  # Example: Avoid creatures with brown coat color
+  # - trait_id: 0
+  #   phenotype: "Brown"
+  
+undesirable_genotypes:
+  # Example: Avoid creatures with bb genotype
+  # - trait_id: 0
+  #   genotype: "bb"
 
 # Breeder configuration
 # Breeders are entities that own creatures and select mating pairs
@@ -65,7 +81,7 @@ breeders:
   random: 50
   inbreeding_avoidance: 30
   kennel_club: 15
-  unrestricted_phenotype: 5
+  mill: 5
   
   # Kennel club breeder configuration (if using kennel_club breeder)
   kennel_club_config:
@@ -75,6 +91,11 @@ breeders:
       - trait_id: 2
         min: "60.0"
         max: "80.0"
+  
+  # Configuration for avoiding undesirable traits
+  # If true, ALL breeders will filter out creatures with undesirable phenotypes/genotypes
+  avoid_undesirable_phenotypes: false  # If true, all breeders avoid undesirable phenotypes
+  avoid_undesirable_genotypes: false   # If true, all breeders avoid undesirable genotypes
 
 # Trait definitions
 traits:

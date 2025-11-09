@@ -354,10 +354,10 @@ class Population:
             cursor.execute("""
                 INSERT INTO creatures (
                     simulation_id, birth_cycle, sex, parent1_id, parent2_id, breeder_id,
-                    inbreeding_coefficient, lifespan, is_alive,
+                    produced_by_breeder_id, inbreeding_coefficient, lifespan, is_alive,
                     conception_cycle, sexual_maturity_cycle, max_fertility_age_cycle,
                     gestation_end_cycle, nursing_end_cycle, generation
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 simulation_id,
                 creature.birth_cycle,
@@ -365,6 +365,7 @@ class Population:
                 parent1_id,
                 parent2_id,
                 creature.breeder_id,
+                creature.produced_by_breeder_id,
                 creature.inbreeding_coefficient,
                 creature.lifespan,
                 creature.is_alive,

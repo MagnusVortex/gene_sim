@@ -20,6 +20,7 @@ class Creature:
         parent1_id: Optional[int] = None,
         parent2_id: Optional[int] = None,
         breeder_id: Optional[int] = None,
+        produced_by_breeder_id: Optional[int] = None,
         inbreeding_coefficient: float = 0.0,
         lifespan: int = 1,
         is_alive: bool = True,
@@ -43,6 +44,7 @@ class Creature:
             parent1_id: ID of first parent (None for founders)
             parent2_id: ID of second parent (None for founders)
             breeder_id: ID of breeder who owns this creature (None if unowned)
+            produced_by_breeder_id: ID of breeder whose breeding program produced this creature (None for founders)
             inbreeding_coefficient: Inbreeding coefficient (F) for this creature
             lifespan: Individual lifespan in cycles
             is_alive: Whether creature is alive
@@ -61,6 +63,7 @@ class Creature:
         self.parent1_id = parent1_id
         self.parent2_id = parent2_id
         self.breeder_id = breeder_id
+        self.produced_by_breeder_id = produced_by_breeder_id
         self.inbreeding_coefficient = inbreeding_coefficient
         self.lifespan = lifespan
         self.is_alive = is_alive
@@ -319,7 +322,8 @@ class Creature:
         traits: List['Trait'],
         rng: np.random.Generator,
         config: 'SimulationConfig',
-        breeder_id: Optional[int] = None
+        breeder_id: Optional[int] = None,
+        produced_by_breeder_id: Optional[int] = None
     ) -> 'Creature':
         """
         Create an offspring from two parents.
@@ -333,6 +337,7 @@ class Creature:
             rng: Random number generator
             config: Simulation configuration
             breeder_id: Optional breeder ID (inherited from female parent if None)
+            produced_by_breeder_id: ID of breeder whose breeding program produced this creature
             
         Returns:
             New Creature instance
@@ -429,6 +434,7 @@ class Creature:
             parent1_id=parent1_id,
             parent2_id=parent2_id,
             breeder_id=breeder_id,
+            produced_by_breeder_id=produced_by_breeder_id,
             inbreeding_coefficient=inbreeding_coefficient,
             lifespan=0,  # Will be set when added to population
             is_alive=True,

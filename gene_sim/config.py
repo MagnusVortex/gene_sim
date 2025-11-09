@@ -46,22 +46,29 @@ class BreederConfig:
     random: int
     inbreeding_avoidance: int
     kennel_club: int
-    unrestricted_phenotype: int
+    mill: int
     kennel_club_config: Optional[Dict[str, Any]] = None
+    # Configuration for avoiding undesirable traits
+    avoid_undesirable_phenotypes: bool = False  # If True, all breeders avoid undesirable phenotypes
+    avoid_undesirable_genotypes: bool = False  # If True, all breeders avoid undesirable genotypes
 
 
 @dataclass
 class SimulationConfig:
     """Complete simulation configuration."""
     seed: int
-    cycles: int  # Number of cycles to run
+    years: float  # Number of years to simulate
+    cycles: int  # Calculated number of cycles (derived from years)
     initial_population_size: int
     initial_sex_ratio: Dict[str, float]
     creature_archetype: CreatureArchetypeConfig
     target_phenotypes: List[Dict[str, Any]]
+    undesirable_phenotypes: List[Dict[str, Any]]  # List of {trait_id, phenotype} dicts
+    undesirable_genotypes: List[Dict[str, Any]]  # List of {trait_id, genotype} dicts
     breeders: BreederConfig
     traits: List[TraitConfig]
     raw_config: Dict[str, Any]  # Store raw config for database storage
+    mode: str = 'quiet'  # Output mode: 'quiet', 'monitor', or 'debug'
 
 
 def load_config(config_path: str) -> SimulationConfig:
@@ -126,11 +133,11 @@ def validate_config(config: Dict[str, Any]) -> None:
     if not isinstance(config['seed'], int):
         raise ConfigurationError("seed must be an integer")
     
-    # Validate cycles
-    if 'cycles' not in config:
-        raise ConfigurationError("Missing required field: cycles")
-    if not isinstance(config['cycles'], int) or config['cycles'] < 1:
-        raise ConfigurationError("cycles must be a positive integer")
+    # Validate years
+    if 'years' not in config:
+        raise ConfigurationError("Missing required field: years")
+    if not isinstance(config['years'], (int, float)) or config['years'] <= 0:
+        raise ConfigurationError("years must be a positive number")
     
     # Validate initial_population_size
     if not isinstance(config['initial_population_size'], int) or config['initial_population_size'] < 1:
@@ -207,7 +214,7 @@ def validate_config(config: Dict[str, Any]) -> None:
     if not isinstance(breeders, dict):
         raise ConfigurationError("breeders must be a dictionary")
     
-    breeder_types = ['random', 'inbreeding_avoidance', 'kennel_club', 'unrestricted_phenotype']
+    breeder_types = ['random', 'inbreeding_avoidance', 'kennel_club', 'mill']
     for breeder_type in breeder_types:
         if breeder_type not in breeders:
             raise ConfigurationError(f"breeders missing required field: {breeder_type}")
@@ -221,6 +228,22 @@ def validate_config(config: Dict[str, Any]) -> None:
         for tp in config['target_phenotypes']:
             if not isinstance(tp, dict) or 'trait_id' not in tp or 'phenotype' not in tp:
                 raise ConfigurationError("target_phenotypes entries must have 'trait_id' and 'phenotype'")
+    
+    # Validate undesirable_phenotypes (optional)
+    if 'undesirable_phenotypes' in config:
+        if not isinstance(config['undesirable_phenotypes'], list):
+            raise ConfigurationError("undesirable_phenotypes must be a list")
+        for up in config['undesirable_phenotypes']:
+            if not isinstance(up, dict) or 'trait_id' not in up or 'phenotype' not in up:
+                raise ConfigurationError("undesirable_phenotypes entries must have 'trait_id' and 'phenotype'")
+    
+    # Validate undesirable_genotypes (optional)
+    if 'undesirable_genotypes' in config:
+        if not isinstance(config['undesirable_genotypes'], list):
+            raise ConfigurationError("undesirable_genotypes must be a list")
+        for ug in config['undesirable_genotypes']:
+            if not isinstance(ug, dict) or 'trait_id' not in ug or 'genotype' not in ug:
+                raise ConfigurationError("undesirable_genotypes entries must have 'trait_id' and 'genotype'")
     
     # Validate traits
     if not isinstance(config['traits'], list) or len(config['traits']) == 0:
@@ -319,6 +342,7 @@ def years_to_cycles(years: float, menstrual_cycle_days: float) -> int:
         Number of cycles (rounded)
     """
     days = years * 365.25  # Account for leap years
+    return days_to_cycles(days, menstrual_cycle_days)
     return days_to_cycles(days, menstrual_cycle_days)
 
 
@@ -431,7 +455,7 @@ def build_config(raw_config: Dict[str, Any]) -> SimulationConfig:
         random=breeders['random'],
         inbreeding_avoidance=breeders['inbreeding_avoidance'],
         kennel_club=breeders['kennel_club'],
-        unrestricted_phenotype=breeders['unrestricted_phenotype'],
+        mill=breeders['mill'],
         kennel_club_config=breeders.get('kennel_club_config')
     )
     
@@ -446,16 +470,32 @@ def build_config(raw_config: Dict[str, Any]) -> SimulationConfig:
     ]
     
     target_phenotypes = raw_config.get('target_phenotypes', [])
+    undesirable_phenotypes = raw_config.get('undesirable_phenotypes', [])
+    undesirable_genotypes = raw_config.get('undesirable_genotypes', [])
+    
+    # Calculate cycles from years using menstrual cycle length
+    years = raw_config['years']
+    menstrual_cycle_days = archetype.get('menstrual_cycle_days', 28.0)  # Default if not set
+    cycles = years_to_cycles(years, menstrual_cycle_days)
+    
+    # Get output mode (default to 'quiet')
+    mode = raw_config.get('mode', 'quiet')
+    if mode not in ['quiet', 'monitor', 'debug']:
+        raise ConfigurationError(f"mode must be 'quiet', 'monitor', or 'debug', got '{mode}'")
     
     return SimulationConfig(
         seed=raw_config['seed'],
-        cycles=raw_config['cycles'],
+        years=years,
+        cycles=cycles,
         initial_population_size=raw_config['initial_population_size'],
         initial_sex_ratio=raw_config['initial_sex_ratio'],
         creature_archetype=creature_archetype,
         target_phenotypes=target_phenotypes,
+        undesirable_phenotypes=undesirable_phenotypes,
+        undesirable_genotypes=undesirable_genotypes,
         breeders=breeder_config,
         traits=traits,
-        raw_config=raw_config
+        raw_config=raw_config,
+        mode=mode
     )
 

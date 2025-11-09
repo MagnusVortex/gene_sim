@@ -12,7 +12,7 @@ def sample_config():
     """Create a sample configuration."""
     return {
         'seed': 42,
-        'cycles': 10,
+        'years': 0.5,  # ~15 cycles with 28 day cycle
         'initial_population_size': 100,
         'initial_sex_ratio': {'male': 0.5, 'female': 0.5},
         'creature_archetype': {
@@ -29,7 +29,7 @@ def sample_config():
             'random': 10,
             'inbreeding_avoidance': 5,
             'kennel_club': 3,
-            'unrestricted_phenotype': 2
+            'mill': 2
         },
         'traits': [
             {
@@ -55,7 +55,8 @@ def test_load_config_yaml(sample_config):
     try:
         config = load_config(config_path)
         assert config.seed == 42
-        assert config.cycles == 10
+        assert config.years == 0.5
+        assert config.cycles > 0  # Should be calculated
         assert config.initial_population_size == 100
         assert len(config.traits) == 1
     finally:
