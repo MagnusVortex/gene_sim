@@ -25,7 +25,8 @@ def config_with_removal():
             'menstrual_cycle_days': 28.0,
             'nearing_end_cycles': 3,
             'remove_ineligible_immediately': False,
-            'offspring_removal_rate': 0.5  # 50% removal rate
+            'offspring_removal_rate': 0.5,  # 50% removal rate
+            'litter_size': {'min': 3, 'max': 6}
         },
         'breeders': {
             'random': 5,

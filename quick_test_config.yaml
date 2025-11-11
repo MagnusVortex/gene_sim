@@ -1,6 +1,6 @@
 # Quick test simulation configuration
 seed: 12345
-years: 10  # Number of years to simulate (cycles will be calculated from this)
+years: 200  # Number of years to simulate (cycles will be calculated from this)
 mode: monitor  # Output mode: 'quiet', 'monitor', or 'debug'
 initial_population_size: 100
 
@@ -23,6 +23,10 @@ creature_archetype:
   menstrual_cycle_days: 24
   nearing_end_cycles: 4
   remove_ineligible_immediately: false
+  # Litter size range (number of offspring per breeding pair)
+  litter_size:
+    min: 3
+    max: 6
 
 target_phenotypes: 
   - trait_id: 0

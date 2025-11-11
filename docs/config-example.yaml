@@ -30,6 +30,12 @@ creature_archetype:
   # Maximum litters for females (litters_remaining starts at this value)
   max_litters: 5
   
+  # Litter size range (number of offspring per breeding pair)
+  # Each breeding pair produces a random number of offspring sampled from this range
+  litter_size:
+    min: 3
+    max: 6
+  
   # Lifespan range (separate from breeding age limits)
   # Each creature gets a random lifespan sampled from this range at birth
   # Creatures age out when age >= their individual lifespan

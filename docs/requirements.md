@@ -42,6 +42,7 @@ Enable researchers, educators, and enthusiasts to:
    - Simulate realistic population sizes (100-10,000+ creatures)
    - Model population growth, stability, and decline
    - Track genetic diversity metrics over time
+   - Configurable litter size (number of offspring per breeding pair)
 
 ### 2.2 Analysis & Reporting Objectives
 1. **Post-Simulation Analysis**
@@ -253,6 +254,7 @@ As a developer, I want to:
    - Independent assortment
    - Point mutations
    - Gene expression to phenotype
+   - Configurable litter size per breeding event
 
 2. **Breeding Strategies**
    - Random mating

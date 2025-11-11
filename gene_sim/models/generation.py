@@ -157,44 +157,51 @@ class Cycle:
                     archetype = config.creature_archetype
                     female.gestation_end_cycle = current_cycle + archetype.gestation_cycles
                     
-                    # Create offspring at conception
-                    child = Creature.create_offspring(
-                        parent1=male,
-                        parent2=female,
-                        conception_cycle=current_cycle,
-                        simulation_id=simulation_id,
-                        traits=traits,
-                        rng=rng,
-                        config=config,
-                        produced_by_breeder_id=breeder_id
+                    # Determine litter size (number of offspring for this pair)
+                    litter_size = rng.integers(
+                        archetype.litter_size_min,
+                        archetype.litter_size_max + 1  # +1 because randint is exclusive on upper bound
                     )
                     
-                    # Store parent references
-                    parent_map[child] = (male, female)
-                    
-                    # Update parent IDs from parent references
-                    # All parents should already have IDs since all creatures are persisted immediately
-                    if male.creature_id is None:
-                        raise ValueError(
-                            f"Parent1 (birth_cycle={male.birth_cycle}) does not have creature_id. "
-                            f"All creatures must be persisted immediately upon creation."
+                    # Create multiple offspring at conception (litter)
+                    for _ in range(litter_size):
+                        child = Creature.create_offspring(
+                            parent1=male,
+                            parent2=female,
+                            conception_cycle=current_cycle,
+                            simulation_id=simulation_id,
+                            traits=traits,
+                            rng=rng,
+                            config=config,
+                            produced_by_breeder_id=breeder_id
                         )
-                    if female.creature_id is None:
-                        raise ValueError(
-                            f"Parent2 (birth_cycle={female.birth_cycle}) does not have creature_id. "
-                            f"All creatures must be persisted immediately upon creation."
+                        
+                        # Store parent references
+                        parent_map[child] = (male, female)
+                        
+                        # Update parent IDs from parent references
+                        # All parents should already have IDs since all creatures are persisted immediately
+                        if male.creature_id is None:
+                            raise ValueError(
+                                f"Parent1 (birth_cycle={male.birth_cycle}) does not have creature_id. "
+                                f"All creatures must be persisted immediately upon creation."
+                            )
+                        if female.creature_id is None:
+                            raise ValueError(
+                                f"Parent2 (birth_cycle={female.birth_cycle}) does not have creature_id. "
+                                f"All creatures must be persisted immediately upon creation."
+                            )
+                        child.parent1_id = male.creature_id
+                        child.parent2_id = female.creature_id
+                        
+                        # Sample lifespan from config range (in cycles)
+                        lifespan = rng.integers(
+                            config.creature_archetype.lifespan_cycles_min,
+                            config.creature_archetype.lifespan_cycles_max + 1
                         )
-                    child.parent1_id = male.creature_id
-                    child.parent2_id = female.creature_id
-                    
-                    # Sample lifespan from config range (in cycles)
-                    lifespan = rng.integers(
-                        config.creature_archetype.lifespan_cycles_min,
-                        config.creature_archetype.lifespan_cycles_max + 1
-                    )
-                    child.lifespan = lifespan
-                    
-                    offspring.append(child)
+                        child.lifespan = lifespan
+                        
+                        offspring.append(child)
         
         # 5. Handle births: Set nursing_end_cycle for mothers when offspring are born
         # Note: Offspring are created at conception, but born later (when birth_cycle == current_cycle)

@@ -23,7 +23,8 @@ def simple_config_file():
             'nursing_period_days': 60.0,
             'menstrual_cycle_days': 28.0,
             'nearing_end_cycles': 3,
-            'remove_ineligible_immediately': False
+            'remove_ineligible_immediately': False,
+            'litter_size': {'min': 3, 'max': 6}
         },
         'breeders': {
             'random': 5,

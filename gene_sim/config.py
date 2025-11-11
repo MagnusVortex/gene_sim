@@ -22,6 +22,10 @@ class CreatureArchetypeConfig:
     menstrual_cycle_days: float
     nearing_end_cycles: int
     
+    # Litter size configuration
+    litter_size_min: int
+    litter_size_max: int
+    
     # Converted to cycles (calculated from above)
     gestation_cycles: int
     nursing_cycles: int
@@ -161,7 +165,7 @@ def validate_config(config: Dict[str, Any]) -> None:
     required_cycle_fields = [
         'sexual_maturity_months', 'max_fertility_age_years',
         'gestation_period_days', 'nursing_period_days', 'menstrual_cycle_days',
-        'nearing_end_cycles', 'lifespan'
+        'nearing_end_cycles', 'lifespan', 'litter_size'
     ]
     
     for field in required_cycle_fields:
@@ -205,6 +209,17 @@ def validate_config(config: Dict[str, Any]) -> None:
         
         if not isinstance(archetype['nearing_end_cycles'], int) or archetype['nearing_end_cycles'] < 0:
             raise ConfigurationError("nearing_end_cycles must be a non-negative integer")
+        
+        # Validate litter_size
+        litter_size = archetype['litter_size']
+        if not isinstance(litter_size, dict) or 'min' not in litter_size or 'max' not in litter_size:
+            raise ConfigurationError("litter_size must contain 'min' and 'max' keys")
+        if not (isinstance(litter_size['min'], int) and litter_size['min'] > 0):
+            raise ConfigurationError("litter_size.min must be a positive integer")
+        if not (isinstance(litter_size['max'], int) and litter_size['max'] > 0):
+            raise ConfigurationError("litter_size.max must be a positive integer")
+        if litter_size['min'] > litter_size['max']:
+            raise ConfigurationError("litter_size.min must be <= litter_size.max")
         
         if not isinstance(archetype.get('remove_ineligible_immediately', False), bool):
             raise ConfigurationError("remove_ineligible_immediately must be a boolean")
@@ -430,6 +445,7 @@ def build_config(raw_config: Dict[str, Any]) -> SimulationConfig:
     lifespan = archetype['lifespan']
     
     # Cycle-based configuration (only supported format)
+    litter_size = archetype['litter_size']
     creature_archetype = CreatureArchetypeConfig(
         remove_ineligible_immediately=archetype.get('remove_ineligible_immediately', False),
         
@@ -440,6 +456,10 @@ def build_config(raw_config: Dict[str, Any]) -> SimulationConfig:
         nursing_period_days=archetype['nursing_period_days'],
         menstrual_cycle_days=archetype['menstrual_cycle_days'],
         nearing_end_cycles=archetype['nearing_end_cycles'],
+        
+        # Litter size configuration
+        litter_size_min=litter_size['min'],
+        litter_size_max=litter_size['max'],
         
         # Converted cycles (calculated in normalize_config)
         gestation_cycles=archetype.get('gestation_cycles', 0),

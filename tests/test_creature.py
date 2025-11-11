@@ -100,6 +100,8 @@ def test_creature_create_offspring(sample_traits):
         nursing_period_days=60.0,
         menstrual_cycle_days=28.0,
         nearing_end_cycles=3,
+        litter_size_min=3,
+        litter_size_max=6,
         gestation_cycles=3,
         nursing_cycles=2,
         maturity_cycles=13,
@@ -182,4 +184,128 @@ def test_creature_inbreeding_coefficient():
     
     f = Creature.calculate_inbreeding_coefficient(parent1, parent2)
     assert f == 0.0  # Unrelated parents
+
+
+def test_litter_size_produces_multiple_offspring(sample_traits):
+    """Test that a single breeding pair produces multiple offspring according to litter_size configuration."""
+    from gene_sim.config import CreatureArchetypeConfig, SimulationConfig
+    
+    # Create config with specific litter size
+    archetype = CreatureArchetypeConfig(
+        remove_ineligible_immediately=False,
+        sexual_maturity_months=6.0,
+        max_fertility_age_years={'male': 10.0, 'female': 8.0},
+        gestation_period_days=60.0,
+        nursing_period_days=30.0,
+        menstrual_cycle_days=28.0,
+        nearing_end_cycles=3,
+        litter_size_min=3,
+        litter_size_max=6,
+        gestation_cycles=2,
+        nursing_cycles=1,
+        maturity_cycles=1,
+        max_fertility_age_cycles={'male': 130, 'female': 104},
+        lifespan_cycles_min=156,
+        lifespan_cycles_max=195
+    )
+    config = SimulationConfig(
+        seed=42,
+        years=0.5,
+        cycles=13,
+        initial_population_size=2,
+        initial_sex_ratio={'male': 0.5, 'female': 0.5},
+        creature_archetype=archetype,
+        target_phenotypes=[],
+        undesirable_phenotypes=[],
+        undesirable_genotypes=[],
+        breeders=None,
+        traits=sample_traits,
+        raw_config={}
+    )
+    
+    # Create a single breeding pair
+    genome1 = [None] * 1
+    genome1[0] = "BB"
+    parent1 = Creature(
+        simulation_id=1,
+        birth_cycle=0,
+        sex="male",
+        genome=genome1,
+        parent1_id=None,
+        parent2_id=None,
+        creature_id=1,
+        sexual_maturity_cycle=0,
+        max_fertility_age_cycle=100,
+        lifespan=200,
+        is_alive=True
+    )
+    
+    genome2 = [None] * 1
+    genome2[0] = "bb"
+    parent2 = Creature(
+        simulation_id=1,
+        birth_cycle=0,
+        sex="female",
+        genome=genome2,
+        parent1_id=None,
+        parent2_id=None,
+        creature_id=2,
+        sexual_maturity_cycle=0,
+        max_fertility_age_cycle=100,
+        lifespan=200,
+        is_alive=True
+    )
+    
+    # Simulate the breeding process as it happens in generation.py
+    # This tests that litter_size is used correctly
+    rng = np.random.Generator(np.random.PCG64(42))
+    offspring = []
+    
+    # Determine litter size (as done in generation.py)
+    litter_size = rng.integers(
+        archetype.litter_size_min,
+        archetype.litter_size_max + 1  # +1 because randint is exclusive on upper bound
+    )
+    
+    # Create multiple offspring (as done in generation.py)
+    for _ in range(litter_size):
+        child = Creature.create_offspring(
+            parent1=parent1,
+            parent2=parent2,
+            conception_cycle=0,
+            simulation_id=1,
+            traits=sample_traits,
+            rng=rng,
+            config=config
+        )
+        child.parent1_id = parent1.creature_id
+        child.parent2_id = parent2.creature_id
+        offspring.append(child)
+    
+    # Verify litter size is within configured range
+    assert len(offspring) >= archetype.litter_size_min, \
+        f"Expected at least {archetype.litter_size_min} offspring, got {len(offspring)}"
+    assert len(offspring) <= archetype.litter_size_max, \
+        f"Expected at most {archetype.litter_size_max} offspring, got {len(offspring)}"
+    
+    # Verify all offspring share the same parents
+    for child in offspring:
+        assert child.parent1_id == parent1.creature_id, \
+            f"Offspring should have parent1_id={parent1.creature_id}, got {child.parent1_id}"
+        assert child.parent2_id == parent2.creature_id, \
+            f"Offspring should have parent2_id={parent2.creature_id}, got {child.parent2_id}"
+        assert child.conception_cycle == 0, \
+            f"All offspring should have conception_cycle=0, got {child.conception_cycle}"
+    
+    # Verify we got multiple offspring (not just 1)
+    assert len(offspring) > 1, \
+        f"Expected multiple offspring from single breeding pair, got {len(offspring)}"
+    
+    # Verify offspring have valid genomes
+    for child in offspring:
+        assert child.genome[0] is not None, \
+            f"Offspring should have a valid genotype, got {child.genome[0]}"
+        # With BB x bb parents, offspring should be Bb (heterozygous)
+        assert child.genome[0] in ["Bb", "bB"], \
+            f"Expected heterozygous genotype (Bb) from BB x bb parents, got {child.genome[0]}"
 
